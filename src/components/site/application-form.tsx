@@ -26,6 +26,8 @@ type Props = {
  */
 export function ApplicationForm({ jobSlug, jobBundesland, askOwnCar, cvUploadEnabled, consentText }: Props) {
   const [state, formAction, pending] = useActionState<ApplyState, FormData>(applyAction, null);
+  // Zeitfalle gegen Bots: Zeitstempel beim ersten Rendern (bewusst impure, stabil per useMemo)
+  // eslint-disable-next-line react-hooks/purity
   const startedAt = useMemo(() => Date.now().toString(), []);
   const errors = state?.errors ?? {};
 

@@ -18,10 +18,7 @@ const NAV = [
 export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  const close = () => setOpen(false);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -100,6 +97,7 @@ export function SiteHeader() {
               <li key={item.href} className="border-b border-line-soft last:border-b-0">
                 <Link
                   href={item.href}
+                  onClick={close}
                   className="block py-3.5 text-[1.05rem] font-medium text-ink"
                   aria-current={pathname === item.href ? "page" : undefined}
                 >
@@ -109,7 +107,7 @@ export function SiteHeader() {
             ))}
           </ul>
           <div className="pt-4">
-            <ButtonLink href="/jobs" className="w-full" size="lg">
+            <ButtonLink href="/jobs" onClick={close} className="w-full" size="lg">
               Jetzt bewerben
             </ButtonLink>
           </div>

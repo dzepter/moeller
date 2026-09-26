@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasPermission } from "@/lib/rbac";
 import { CMS_PAGES, type CmsPageContent, type CmsFieldValue, type CmsPairValue } from "@/lib/cms-schema";
 import { saveDraft, publishRevision } from "@/server/cms";
-import type { ActionResult } from "@/app/actions/admin-candidates";
 
 /**
  * CMS-Formulardaten → strukturiertes Inhaltsobjekt.

@@ -41,14 +41,19 @@ export function ChatWidget() {
     }
   }, []);
 
-  // Beim Öffnen laden + SSE verbinden (mit Polling-Fallback)
+  // Beim Öffnen laden + Polling-Fallback (asynchron, nie synchron im Effect)
   useEffect(() => {
     if (!open) return;
-    void load();
+    const initial = setTimeout(() => {
+      void load();
+    }, 0);
     const poll = setInterval(() => {
       if (!esRef.current) void load();
     }, 15000);
-    return () => clearInterval(poll);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(poll);
+    };
   }, [open, load]);
 
   useEffect(() => {

@@ -7,7 +7,6 @@ import { db } from "@/lib/db";
 import { getCurrentUser, hasPermission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { slugify } from "@/lib/utils";
-import type { ActionResult } from "@/app/actions/admin-candidates";
 
 const jobSchema = z.object({
   id: z.string().optional(),

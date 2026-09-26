@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser, hasPermission, ForbiddenError } from "@/lib/rbac";
 import { getApplicationDetail } from "@/server/candidates";
 import { findDuplicateHints } from "@/server/applications";
-import { PageHeader, Card, Badge, EmptyState } from "@/components/admin/ui";
+import { PageHeader, Card, Badge } from "@/components/admin/ui";
 import { statusLabel, statusTone, MANUAL_STATUS_LABEL, AUTO_STATUS_LABEL, REFERRAL_STATUS_LABEL } from "@/components/admin/status";
 import { StatusForm, AssignForm, NoteForm, NoteItem, ReminderForm, Collapsible } from "@/components/admin/candidate-widgets";
 import { completeReminderAction } from "@/app/actions/admin-candidates";

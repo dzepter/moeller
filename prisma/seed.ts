@@ -8,6 +8,7 @@
 import { PrismaClient } from "@prisma/client";
 import { hash } from "@node-rs/argon2";
 import { randomBytes } from "node:crypto";
+import { seedAcademy } from "./seed-academy";
 
 const db = new PrismaClient();
 
@@ -344,6 +345,9 @@ async function main() {
       });
     }
   }
+
+  // ---------- Academy-Kurs (aus auditierter PPTX) ----------
+  await seedAcademy(db);
 
   if (printedCredentials.length) {
     console.log("\n──────────────────────────────────────────────");

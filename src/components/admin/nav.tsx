@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type NavItem = { href: string; label: string; exact?: boolean };
@@ -21,8 +21,7 @@ export function AdminNav({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
-  useEffect(() => setOpen(false), [pathname]);
+  const close = () => setOpen(false);
 
   const nav = (
     <nav aria-label="Adminbereich" className="flex-1 overflow-y-auto px-3 py-4">
@@ -33,6 +32,7 @@ export function AdminNav({
             <li key={item.href}>
               <Link
                 href={item.href}
+                onClick={close}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "block rounded-[2px] px-3 py-2 text-[0.9rem] font-medium transition-colors",

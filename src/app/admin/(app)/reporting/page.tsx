@@ -23,7 +23,9 @@ export default async function ReportingPage({ searchParams }: { searchParams: Se
   const user = await requireUser();
   const params = await searchParams;
 
+  // Server Component: einmal pro Request ausgewertet
   const toStr = typeof params.bis === "string" && params.bis ? params.bis : new Date().toISOString().slice(0, 10);
+  // eslint-disable-next-line react-hooks/purity
   const fromDefault = new Date(Date.now() - 89 * 86_400_000).toISOString().slice(0, 10);
   const fromStr = typeof params.von === "string" && params.von ? params.von : fromDefault;
   const range = { from: new Date(`${fromStr}T00:00:00`), to: new Date(`${toStr}T23:59:59`) };
