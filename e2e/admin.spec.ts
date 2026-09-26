@@ -95,6 +95,46 @@ test.describe("Interner Bereich", () => {
     await expect(page.getByText("Interne Testnotiz (E2E)")).toBeVisible();
   });
 
+  test("Wiedervorlagen: Dashboard-Kachel führt zur gefüllten Liste (Regression RC-P1)", async ({ page }) => {
+    const unique = Date.now().toString(36);
+    // Bewerbung anlegen, damit die Wiedervorlage bewerbungsgebunden ist –
+    // genau der Fall, der vor dem Fix für Admin/Innendienst unsichtbar war.
+    await page.goto("/initiativbewerbung");
+    await page.fill("#f-firstName", "Kachel");
+    await page.fill("#f-lastName", `Kette-${unique}`);
+    await page.fill("#f-city", "Essen");
+    await page.selectOption("#f-bundesland", "NRW");
+    await page.locator('input[name="driversLicense"][value="nein"]').check({ force: true });
+    await page.fill("#f-previousActivity", "Handel");
+    await page.fill("#f-availableFrom", "sofort");
+    await page.fill("#f-phone", "0171 4445566");
+    await page.fill("#f-email", `kachel-${unique}@example.com`);
+    await page.check("#f-consent");
+    await page.waitForTimeout(3200);
+    await page.getByRole("button", { name: "Bewerbung absenden" }).click();
+    await page.waitForURL("**/danke");
+
+    await login(page, "e2e-innendienst@test.local");
+    await page.goto(`/admin/bewerbungen?q=Kette-${unique}`);
+    await page.getByRole("link", { name: `Kachel Kette-${unique}` }).click();
+    await page.waitForURL(/\/admin\/bewerbungen\/[a-z0-9]+/);
+    await page.locator("summary", { hasText: "Wiedervorlage anlegen" }).click();
+    await page.fill("#rm-date", new Date().toISOString().slice(0, 10));
+    await page.fill("#rm-subject", `Kachel-Kette ${unique}`);
+    await page.getByRole("button", { name: "Wiedervorlage anlegen" }).click();
+    await expect(page.getByText("Gespeichert.").first()).toBeVisible();
+
+    // Dashboard-Kachel zeigt einen Zähler ≥ 1 und verlinkt in die Liste,
+    // in der derselbe Eintrag tatsächlich sichtbar ist (komplette Nutzerkette).
+    await page.goto("/admin");
+    const tile = page.getByRole("link", { name: /Wiedervorlagen heute/ });
+    const tileValue = Number(((await tile.innerText()).match(/\d+/) ?? ["0"])[0]);
+    expect(tileValue).toBeGreaterThanOrEqual(1);
+    await tile.click();
+    await page.waitForURL(/\/admin\/wiedervorlagen/);
+    await expect(page.getByText(`Kachel-Kette ${unique}`)).toBeVisible();
+  });
+
   test("Chat: Besucher-Nachricht erscheint intern und kann beantwortet werden", async ({ page, context }) => {
     const unique = Date.now().toString(36);
     // Besucher schreibt

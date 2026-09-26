@@ -23,7 +23,11 @@ export default async function WiedervorlagenPage({ searchParams }: { searchParam
 
   const baseWhere = {
     done: false,
-    OR: [{ application: scope }, { application: null, ...(canSeeAll ? {} : { assigneeId: user.id }) }],
+    // `is:` erzwingt die Relations-Semantik ("Bewerbung existiert und erfüllt
+    // den Scope"): der uneingeschränkte Scope ist bei candidates.read.all ein
+    // leeres Objekt, das Prisma als Kurzform-Filter ersatzlos entfernen würde –
+    // dann bliebe nur der Zweig für bewerbungslose Wiedervorlagen übrig.
+    OR: [{ application: { is: scope } }, { application: null, ...(canSeeAll ? {} : { assigneeId: user.id }) }],
   };
 
   const where =
