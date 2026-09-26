@@ -32,7 +32,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
   const [regions, assignableUsers, duplicates] = await Promise.all([
     db.region.findMany({ orderBy: { name: "asc" } }),
     db.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    findDuplicateHints(app.candidateId),
+    findDuplicateHints(user, app.candidateId),
   ]);
 
   const candidate = app.candidate;

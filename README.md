@@ -123,18 +123,22 @@ Umgebung gesetzt sein (der Start protokolliert dann eine laute Warnung).
 
 ## Seed & Anmeldung im Dev-Modus
 
-`npm run seed` legt idempotent an: Rollen & Berechtigungen, Regionen,
-Demo-Benutzer, vier Beispiel-Stellen, CMS-Startinhalte, den kompletten
-Academy-Kurs sowie (nur außerhalb von Produktion) Demo-Bewerbungen.
+`npm run seed` ist zweistufig und idempotent:
+
+- **Production-Bootstrap (läuft immer, auch produktiv):** Rollen &
+  Berechtigungen, Regionen, die echten Mitarbeitenden-Konten (siehe Tabelle,
+  ohne Demo-Teamleiter), öffentliche Team-Einträge und der komplette
+  Academy-Kurs. **Es werden produktiv keine Stellen angelegt oder
+  veröffentlicht und keine Demo-/Testdaten erzeugt.**
+- **Demo-Daten (NUR außerhalb von `NODE_ENV=production`):** drei
+  Demo-Teamleiter-Konten, vier Beispiel-Stellen und fiktive Demo-Bewerbungen.
 
 | Benutzer | Rolle | E-Mail |
 | --- | --- | --- |
 | Markus Möller | Administrator | `markus@bvg-moeller.de` |
 | Jana Talackova | Innendienst | `jana@bvg-moeller.de` |
 | Jasmin Mück | Innendienst | `jasmin@bvg-moeller.de` |
-| Teamleitung NRW (Demo) | Teamleiter | `tl-nrw@bvg-moeller.de` |
-| Teamleitung Hessen (Demo) | Teamleiter | `tl-hessen@bvg-moeller.de` |
-| Teamleitung Bayern (Demo) | Teamleiter | `tl-bayern@bvg-moeller.de` |
+| Teamleitung NRW/Hessen/Bayern (Demo) | Teamleiter | `tl-nrw@`, `tl-hessen@`, `tl-bayern@bvg-moeller.de` — **nur Entwicklung**, in Produktion nicht angelegt |
 
 Passwörter kommen aus `SEED_ADMIN_PASSWORD` bzw. `SEED_USER_PASSWORD`. Sind die
 Variablen leer, erzeugt der Seed **Zufallspasswörter und gibt sie einmalig in
@@ -155,7 +159,10 @@ eingerichtet.
 - Fehlgeschlagene Sendungen landen mit Fehlertext im Protokoll; der Scheduler
   versucht sie automatisch erneut.
 - Alle Vorlagen (Eingangsbestätigung, Status-Infos, Academy-Einladung,
-  Erinnerungen …) liegen in `src/lib/email/templates.ts` – deutschsprachig,
+  Erinnerungen …) liegen bewusst als Code in `src/lib/email/templates.ts`
+  (Typsicherheit, konsistente Tonalität; keine Admin-Editierbarkeit der
+  Texte). Erreichbarkeitszeiten und Telefonnummer darin kommen aus den
+  zentralen Einstellungen, Empfängerlisten sind im Admin konfigurierbar.
   Bewerber werden geduzt, Unternehmen gesiezt.
 
 ---
@@ -195,17 +202,26 @@ konfigurierten Frist, zeitgesteuerte Job- und CMS-Veröffentlichung,
 E-Mail-Neuversand, Datenschutz-Aufbewahrung, Academy-Erinnerungen) laufen über
 idempotente Jobs:
 
-- **Intern (Standard):** Minuten-Tick im App-Prozess (`SCHEDULER_ENABLED=true`).
-  Ein PostgreSQL-Advisory-Lock verhindert Doppelläufe bei mehreren Instanzen.
-- **Extern (optional):** `CRON_SECRET` setzen und von einer Plattform
-  (Kubernetes CronJob, systemd-Timer, Hosting-Cron) aufrufen lassen:
+**Empfohlene Produktionsstrategie (die eine, dokumentierte):** der interne
+Minuten-Tick im App-Prozess (`SCHEDULER_ENABLED=true`, Default) – für den
+vorgesehenen Single-VPS-/Single-Container-Betrieb genau richtig, ohne weitere
+Infrastruktur. Ein transaktionsgebundener PostgreSQL-Advisory-Lock
+(`pg_try_advisory_xact_lock`) verhindert Doppelläufe; die Lock-Transaktion
+hält während eines Laufs eine DB-Verbindung, die Jobs selbst laufen über den
+globalen Client.
+
+*Alternative nur für Plattformen ohne langlaufende Prozesse:* `SCHEDULER_ENABLED=false`
+setzen, `CRON_SECRET` erzeugen und `/api/cron/run` **minütlich** aufrufen lassen:
 
   ```bash
   curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://…/api/cron/run
   ```
 
-  Ohne gesetztes `CRON_SECRET` ist der Endpunkt deaktiviert. Beide Wege können
-  parallel existieren – der Lock schützt vor Überschneidungen.
+Der Endpunkt respektiert die `everyMinutes`-Intervalle der Jobs (kein
+Force-Modus): Retention & Co. laufen also auch bei häufigem Aufruf nicht öfter
+als vorgesehen – deshalb muss der externe Trigger minütlich kommen, sonst
+werden Intervall-Slots verpasst. Ohne gesetztes `CRON_SECRET` ist der Endpunkt
+deaktiviert; beide Wege parallel sind durch den Lock unschädlich, aber unnötig.
 
 ---
 
@@ -252,10 +268,16 @@ cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
 npm run e2e                        # startet den Standalone-Server auf Port 3200
 ```
 
-Die E2E-Suite prüft die öffentlichen Kernflüsse (Bewerbung, Empfehlung, Chat,
-404), die internen Abläufe (Status, Wiedervorlage, Chat-Antwort, CMS-Publish,
-Berechtigungen) und den kompletten Academy-Weg von der Zusage bis zur
-abgeschlossenen Lektion – inklusive WCAG-2.1-AA-Prüfung per axe.
+Die E2E-Suite prüft die öffentlichen Kernflüsse (Bewerbung inkl. UTM-Kette,
+Empfehlung, Chat, 404), die internen Abläufe (Status, Wiedervorlage,
+Chat-Antwort, CMS-Publish, Berechtigungen, MFA-Pflicht-Gate), die
+Nicht-Indexierbarkeit von Academy/Admin und den kompletten Academy-Weg von der
+Zusage bis zur abgeschlossenen Lektion. Accessibility: axe-core mit allen
+automatisierbaren WCAG-2.0/2.1/**2.2**-Regeln (A+AA) auf öffentlichen Seiten,
+Admin-Login und Academy; jede Impact-Klasse außer `minor` ist ein Testfehler.
+Was axe nicht automatisieren kann, deckt die manuelle Checkliste in
+[`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md) ab – es gibt bewusst keine
+Behauptung einer vollautomatisch nachgewiesenen WCAG-2.2-AA-Konformität.
 
 ---
 
@@ -283,12 +305,29 @@ Checkliste vor dem Livegang:
    verwahren – der Encryption-Key lässt sich nicht folgenlos tauschen).
 2. `APP_BASE_URL` auf die echte Domain gesetzt (E-Mail- und Academy-Links!).
 3. SMTP getestet (Eingangsbestätigung an eine Testadresse).
-4. Seed einmalig ausgeführt, Zufallspasswörter vergeben, MFA für Admins aktiv.
-5. Demo-Teamleiter-Konten deaktivieren oder durch echte ersetzen.
+4. Seed einmalig ausgeführt, Zufallspasswörter vergeben; beim ersten
+   Admin-Login MFA einrichten (wird erzwungen, s. Abschnitt Sicherheit).
+5. Echte Teamleiter über Admin → Benutzer anlegen (Demo-Teamleiter existieren
+   in Produktion nicht; nur relevant, falls eine Dev-Datenbank übernommen wurde).
 6. Backups eingerichtet (siehe unten) und Restore einmal geprobt.
 7. `RATE_LIMIT_DISABLED` ist **nicht** gesetzt.
 8. HTTPS terminiert der vorgelagerte Proxy; die App setzt Security-Header
    (CSP, HSTS-fähig) bereits selbst.
+9. **Proxy-Vertrauensmodell (Pflicht):** Der Reverse Proxy MUSS `X-Real-IP`
+   setzen bzw. `X-Forwarded-For` um die echte Client-IP **ergänzen** und darf
+   Client-gelieferte Werte nicht ungefiltert durchreichen (nginx:
+   `proxy_set_header X-Real-IP $remote_addr;`). Die App wertet bewusst
+   `X-Real-IP` bzw. den LETZTEN `X-Forwarded-For`-Eintrag aus – ohne korrekt
+   konfigurierten Proxy könnten Clients sonst IP-basierte Rate-Limits mit
+   gefälschten Headern umgehen. Ohne solche Header landen alle Requests
+   konservativ in einem gemeinsamen Bucket.
+10. **Go-Live-Check beachten:** Admin → Einstellungen zeigt Blocker/Warnungen
+   (u. a. Rechtstext-Platzhalter, fehlendes SMTP, fehlender Malware-Scan);
+   der Serverstart protokolliert Blocker zusätzlich. Ein Livegang mit offenen
+   Blockern ist nicht freigegeben – insbesondere müssen die echten
+   Impressums-/Datenschutzangaben (Geschäftsführung, Registergericht, HRB,
+   USt-ID, geprüfte Datenschutzerklärung) vom Betreiber eingepflegt sein.
+   Diese Angaben werden nirgends automatisch erfunden.
 
 ---
 
@@ -374,8 +413,10 @@ Nachrichtentexte sind dort ebenfalls einstellbar.
 
 - Passwörter: Argon2id; Sessions: DB-gestützt mit gepfefferten Token-Hashes,
   `__Host-`-Cookie, Idle- und Absolut-Ablauf.
-- MFA (TOTP) für Administratoren verpflichtend; TOTP-Secrets ruhen
-  AES-256-GCM-verschlüsselt.
+- MFA (TOTP) für Administratoren verpflichtend und **technisch erzwungen**:
+  ein Administrator ohne eingerichtete MFA erreicht serverseitig ausschließlich
+  die Einrichtungsseite (`/admin/sicherheit`) – auch bei direktem Aufruf
+  beliebiger `/admin/…`-URLs. TOTP-Secrets ruhen AES-256-GCM-verschlüsselt.
 - Berechtigungen werden **serverseitig** in jeder Server-Action und Route
   geprüft (Objekt-Ebene, nicht nur Menü-Ausblendung); dedizierte
   Permission-Tests sichern das ab.
@@ -389,6 +430,14 @@ Nachrichtentexte sind dort ebenfalls einstellbar.
   REVOKE UPDATE, DELETE ON TABLE "AuditLog" FROM moeller;
   ```
 
+- **Malware-Scan für Bewerber-Uploads:** Default `MALWARE_SCANNER=none` ist
+  ausdrücklich KEIN Schutz – Uploads werden dann nicht auf Schadsoftware
+  geprüft (der Go-Live-Check warnt). Mit `MALWARE_SCANNER=clamav` prüft ein
+  clamd jeden Upload; ist der Scanner nicht erreichbar, werden Uploads
+  **abgelehnt** (fail closed) statt ungeprüft angenommen.
+- Rate-Limits arbeiten atomar auf PostgreSQL-Ebene (parallele Requests können
+  das Limit nicht per Race umgehen); zum nötigen Proxy-Vertrauensmodell siehe
+  Deployment-Checkliste Punkt 9.
 - Keine Secrets im Repository; `.env` ist git-ignoriert.
 - Sicherheitskonzept im Detail: [`docs/SECURITY_AND_PRIVACY.md`](docs/SECURITY_AND_PRIVACY.md).
 

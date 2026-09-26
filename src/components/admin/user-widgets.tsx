@@ -8,6 +8,37 @@ import { Button } from "@/components/ui/button";
 
 type Option = { id: string; name: string };
 
+/**
+ * Passwortfeld mit zugänglichem Anzeigen/Verbergen-Schalter.
+ * Immer type="password" als Grundzustand + autocomplete="new-password",
+ * damit Browser/Passwortmanager korrekt reagieren und nichts im Klartext
+ * über die Schulter lesbar ist.
+ */
+function PasswordInput({ id, placeholder }: { id: string; placeholder?: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        name="password"
+        type={visible ? "text" : "password"}
+        autoComplete="new-password"
+        required
+        className={`${inputCls} pr-20`}
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-pressed={visible}
+        className="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-brand hover:text-brand-deep"
+      >
+        {visible ? "Verbergen" : "Anzeigen"}
+      </button>
+    </div>
+  );
+}
+
 function Feedback({ state }: { state: ActionResult }) {
   if (!state) return null;
   if (state.error)
@@ -63,7 +94,7 @@ export function UserCreateForm({ roles, regions }: { roles: Option[]; regions: O
       </div>
       <div>
         <Label htmlFor="uc-pass">Startpasswort</Label>
-        <input id="uc-pass" name="password" type="text" required className={inputCls} placeholder="mind. 10 Zeichen" />
+        <PasswordInput id="uc-pass" placeholder="mind. 10 Zeichen" />
       </div>
       <div className="md:col-span-5">
         <Button type="submit" size="sm" disabled={pending}>
@@ -138,7 +169,7 @@ export function UserEditRow({
           <input type="hidden" name="userId" value={user.id} />
           <div>
             <Label htmlFor={`ur-pass-${user.id}`}>Neues Startpasswort</Label>
-            <input id={`ur-pass-${user.id}`} name="password" type="text" required className={inputCls} />
+            <PasswordInput id={`ur-pass-${user.id}`} />
           </div>
           <Button type="submit" size="sm" variant="outline" disabled={resetPending}>
             Zurücksetzen (alle Sitzungen enden)

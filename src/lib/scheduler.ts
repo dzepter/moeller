@@ -27,9 +27,13 @@ export async function runAllJobs(opts?: { force?: boolean }): Promise<Record<str
   const results: Record<string, unknown> = {};
   const minute = Math.floor(Date.now() / 60_000);
 
-  // Transaktionsgebundener Advisory Lock: Session-Locks über den Connection-
-  // Pool wären fehleranfällig (Lock und Unlock können auf unterschiedlichen
-  // Verbindungen landen). Der xact-Lock wird beim Commit automatisch frei.
+  // Transaktionsgebundener Advisory Lock (pg_try_advisory_xact_lock):
+  // Session-Locks über den Connection-Pool wären fehleranfällig (Lock und
+  // Unlock können auf unterschiedlichen Verbindungen landen). Der xact-Lock
+  // wird beim Commit automatisch frei. Bewusster Trade-off: Die Lock-
+  // Transaktion hält für die Dauer des Laufs EINE Pool-Verbindung offen,
+  // während die Jobs selbst über den globalen Client (andere Verbindungen)
+  // arbeiten – bei minütlichen, kurzen Läufen unkritisch.
   return await db.$transaction(
     async (tx) => {
       const lock = await tx.$queryRaw<Array<{ locked: boolean }>>`SELECT pg_try_advisory_xact_lock(${LOCK_KEY}) AS locked`;

@@ -31,7 +31,10 @@ ${footer}`,
   };
 }
 
-export function tplEingangsbestaetigung(p: { firstName: string; stelle: string | null }) {
+/** Kontaktzeile aus zentralen Settings (contact.openingHours / contact.phone) – nie hart codieren. */
+export type ContactInfo = { hoursLabel: string; phone: string };
+
+export function tplEingangsbestaetigung(p: { firstName: string; stelle: string | null; contact: ContactInfo }) {
   return {
     subject: "Deine Bewerbung bei Möller ist angekommen",
     text: `Hallo ${p.firstName},
@@ -40,7 +43,7 @@ danke für Deine Bewerbung${p.stelle ? ` als ${p.stelle}` : " bei der Möller Gm
 
 So geht es jetzt weiter: Unser Innendienst schaut sich Deine Angaben an und meldet sich in der Regel innerhalb weniger Werktage telefonisch oder per E-Mail bei Dir. Du musst nichts weiter tun.
 
-Wenn Du vorab Fragen hast, erreichst Du uns Montag bis Freitag von 08:00 bis 17:00 Uhr unter 06725 / 919350.
+Wenn Du vorab Fragen hast, erreichst Du uns ${p.contact.hoursLabel} unter ${p.contact.phone}.
 
 Viele Grüße
 Dein Möller-Team
@@ -101,7 +104,7 @@ ${footer}`,
   };
 }
 
-export function tplAcademyEinladung(p: { firstName: string; courseTitle: string; link: string; validDays: number }) {
+export function tplAcademyEinladung(p: { firstName: string; courseTitle: string; link: string; validDays: number; contact: ContactInfo }) {
   return {
     subject: `Dein Zugang zur Möller Academy – ${p.courseTitle}`,
     text: `Hallo ${p.firstName},
@@ -115,7 +118,7 @@ Ein paar Hinweise:
 - Du kannst jederzeit unterbrechen und später weitermachen – Dein Fortschritt wird gespeichert.
 - Die Schulung funktioniert auch gut am Smartphone.
 
-Bei Fragen erreichst Du unser Büro Montag bis Freitag von 08:00 bis 17:00 Uhr unter 06725 / 919350.
+Bei Fragen erreichst Du unser Büro ${p.contact.hoursLabel} unter ${p.contact.phone}.
 
 Viele Grüße
 Jana & Jasmin
@@ -124,7 +127,7 @@ ${footer}`,
   };
 }
 
-export function tplAcademyErinnerung(p: { firstName: string; courseTitle: string; link: string }) {
+export function tplAcademyErinnerung(p: { firstName: string; courseTitle: string; link: string; contact: ContactInfo }) {
   return {
     subject: `Kleine Erinnerung: Deine Möller-Schulung wartet`,
     text: `Hallo ${p.firstName},
@@ -133,7 +136,7 @@ Deine Online-Schulung „${p.courseTitle}" ist noch nicht abgeschlossen. Nimm Di
 
 ${p.link}
 
-Bei Fragen sind wir Montag bis Freitag von 08:00 bis 17:00 Uhr unter 06725 / 919350 für Dich da.
+Bei Fragen sind wir ${p.contact.hoursLabel} unter ${p.contact.phone} für Dich da.
 
 Viele Grüße
 Dein Möller-Team

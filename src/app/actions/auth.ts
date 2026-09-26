@@ -23,6 +23,7 @@ import { tplPasswortReset } from "@/lib/email/templates";
 import { env } from "@/lib/env";
 import { getSetting } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/rbac";
+import { consumePasswordReset } from "@/lib/auth/password-reset";
 
 export type AuthState = { error?: string } | null;
 
@@ -187,16 +188,10 @@ export async function completePasswordResetAction(_prev: AuthState, formData: Fo
   const policyError = validatePasswordPolicy(newPassword);
   if (policyError) return { error: policyError };
 
-  const reset = await db.passwordResetToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
-  if (!reset || reset.usedAt || reset.expiresAt < new Date() || !reset.user.active) {
-    return { error: "Dieser Link ist nicht mehr gültig. Bitte fordere einen neuen an." };
-  }
-  await db.$transaction([
-    db.passwordResetToken.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
-    db.user.update({ where: { id: reset.userId }, data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false } }),
-    db.session.updateMany({ where: { userId: reset.userId, revokedAt: null }, data: { revokedAt: new Date() } }),
-  ]);
-  await audit({ action: "auth.password.reset.completed", actorId: reset.userId });
+  // Atomarer, concurrency-sicherer Verbrauch (genau eine erfolgreiche Nutzung
+  // pro Token, auch bei parallelen Requests) – Logik in lib/auth/password-reset.
+  const result = await consumePasswordReset(token, newPassword);
+  if (!result.ok) return { error: result.error };
   redirect("/admin/login?reset=ok");
 }
 

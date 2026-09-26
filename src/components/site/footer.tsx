@@ -74,7 +74,8 @@ export async function SiteFooter() {
       </div>
 
       <div className="border-t border-white/10">
-        <div className="site-container flex flex-col gap-3 py-5 text-sm text-white/50 md:flex-row md:items-center md:justify-between">
+        {/* Mobil unten Platz lassen, damit der schwebende Chat-Button Impressum/Datenschutz nie überdeckt */}
+        <div className="site-container flex flex-col gap-3 pt-5 pb-24 text-sm text-white/50 md:flex-row md:items-center md:justify-between md:pb-5">
           <p>© {new Date().getFullYear()} Möller GmbH · Beratungs- &amp; Vertriebsgesellschaft</p>
           <ul className="flex gap-6">
             <li><Link href="/impressum" className="hover:text-white">Impressum</Link></li>

@@ -1,32 +1,62 @@
 # Abschließende Qualitätsprüfung (Masterprompt §47)
 
-Stand: 26.09.2026 · geprüft am fertigen Production-Build (Standalone) mit
-geseedeter Datenbank. Ergebnis je Frage mit Beleg.
+Stand: 26.09.2026, **nach dem Hardening-/Security-/QA-/Polish-Durchgang** auf
+Basis des externen Review-Pakets (Review-Basis war `25ffe04`). Geprüft am
+fertigen Production-Build (Standalone) mit geseedeter Datenbank.
 
 | # | Frage | Ergebnis | Beleg |
 | --- | --- | --- | --- |
-| 1 | Sieht die Website irgendwo wie ein AI-/Template-Design aus? | Nein. Redaktionelles Layout: asymmetrische Split-Sektionen, nummerierte Blöcke, Schrägkanten-Motiv aus dem Logo, echte PoS-Fotografie, keine drei-Karten-Raster mit Icon-Kreisen, keine Stock-Illustrationen. | Visuelle QA per Screenshot (Desktop + Mobil) über alle Seiten; `docs/DESIGN_SYSTEM.md` |
-| 2 | Zu viele gleichartige Karten? | Nein. Listen sind redaktionell gesetzt (Jobzeilen mit Hairlines statt Kartengrid, Zahlen-/Textblöcke, Bildpaare); Karten kommen nur im Admin als Werkzeug vor. | Startseite, /jobs, /fuer-unternehmen |
-| 3 | Typografie, Abstände, Bildgrößen konsistent? | Ja. Zwei Schriftfamilien (Archivo/Inter) mit fester Skala, zentrale Design-Tokens, wiederverwendete Section-/Eyebrow-Komponenten, Bilder mit festen Seitenverhältnissen und `sizes`. | `globals.css` @theme, `components/site/section.tsx` |
-| 4 | Auf kleinem Smartphone wirklich hervorragend? | Ja. Mobile-first geprüft (390 px): Navigation als Vollbild-Menü, Formulare einspaltig mit großen Touch-Zielen, Academy komplett für Mobilnutzung entworfen; E2E-Academy-Test läuft im 390×844-Viewport. | `e2e/admin.spec.ts` (Academy-Test), mobile Screenshots |
-| 5 | Bewerbung in ~2 Minuten möglich? | Ja. Ein Formular, nur relevante Pflichtfelder, ohne Konto, ohne Anschreiben; CV-Upload optional je Stelle. E2E füllt es in Sekunden aus. | `e2e/public.spec.ts` „Bewerbung in 2 Minuten" |
-| 6 | Kann nicht-technischer Innendienst Stellen pflegen? | Ja. Admin → Stellen: Formular mit Listenfeldern, Vorschau, Zeitsteuerung; keine HTML-/Markdown-Kenntnisse nötig. | `/admin/stellen`, README „Job anlegen" |
-| 7 | Kann Markus Websiteinhalte ohne HTML ändern? | Ja. Schema-getriebenes CMS mit einfachen Text-/Listen-/Bildfeldern, Versionen + Wiederherstellen; E2E ändert die Startseiten-Headline und veröffentlicht. | `e2e/admin.spec.ts` CMS-Test |
-| 8 | Sehen Teamleiter technisch nur eigene Bewerber? | Ja. Serverseitiger Scope in jeder Query (`applicationScope`), Objektzugriff einzeln geprüft (kein IDOR); dedizierte Permission-Tests inkl. Direktzugriff auf fremde IDs. | `tests/permissions/teamleiter-scope.test.ts` |
-| 9 | Funktioniert die Vertretung automatisch und sicher? | Ja. Zeitraumbasiert, wird zur Laufzeit wirksam/unwirksam, keine Selbst-/Zirkel-/Kettenvertretung, Historie bleibt. | `tests/integration/delegations.test.ts` |
-| 10 | Tauchen Empfehlungen sauber im Bewerbertool auf? | Ja. Eigener Empfehlungsbereich mit eigener Statuswelt; Konvertierung erzeugt Bewerbung mit Quelle „Empfehlung". | `tests/integration/referrals.test.ts` |
-| 11 | Bleibt Herkunft bei Konvertierung erhalten? | Ja. `Application.referralId` + übernommene Statushistorie; im Detail sichtbar. | ebd. |
-| 12 | Personenbezogene Daten aus öffentlichen Responses, Logs, Analytics ferngehalten? | Ja. Öffentliche Endpunkte geben keine Personendaten zurück (Honeypot-Antwort ist Fake), Analytics ist Opt-in und zählt nur Tageszähler ohne IDs/IPs, IPs nur als gesalzener Hash im Rate-Limit, Fehlerlogs ohne Formulardaten. | `src/lib/analytics.ts`, `src/lib/rate-limit.ts`, `docs/SECURITY_AND_PRIVACY.md` |
-| 13 | Live-Chat intern sinnvoll bearbeitbar? | Ja. Posteingang mit Status/Zuweisung, Live-Updates per SSE (Bundle-übergreifender Hub-Singleton-Fix verifiziert), Verlauf pro Besucher-Token; E2E deckt Besucherfrage → interne Antwort → Besucher sieht Antwort ab. | `e2e/admin.spec.ts` Chat-Test |
-| 14 | Keine falschen Unternehmensdaten? | Ja. Ausschließlich §44-Daten (Max-Planck-Str. 8, 55435 Gau-Algesheim, 06725/919350, info@/bewerbung@bvg-moeller.de); keine erfundenen Kennzahlen, Kundenlogos oder Historien; Öffnungszeiten zentral als Einstellung. | `src/lib/settings.ts` Defaults, Impressum |
-| 15 | Alle Kernflüsse automatisiert getestet? | Ja. 50 Vitest-Tests (Unit/Integration/Permissions) + 13 Playwright-E2E inkl. axe-WCAG-2.1-AA auf Kernseiten. | `npm test`, `npm run e2e` |
+| 1 | Sieht die Website irgendwo wie ein AI-/Template-Design aus? | Nein. Redaktionelles Layout: asymmetrische Split-Sektionen, nummerierte Blöcke, Schrägkanten-Motiv aus dem Logo, echte PoS-Fotografie. Der Polish-Pass hat gezielt Hero-Rhythmus (mobil), Fokus-/Hover-/Active-Zustände und den Chat-Freiraum im Footer verfeinert – kein Redesign. | Screenshots Desktop/Mobil; `docs/DESIGN_SYSTEM.md` |
+| 2 | Zu viele gleichartige Karten? | Nein. Listen bleiben redaktionell gesetzt (Jobzeilen mit Hairlines, Zahlen-/Textblöcke); Karten nur im Admin als Werkzeug. | Startseite, /jobs, /fuer-unternehmen |
+| 3 | Typografie, Abstände, Bildgrößen konsistent? | Ja. Zentrale Tokens, wiederverwendete Section-/Eyebrow-Komponenten; Hero-Typografie mobil nachjustiert (2.35 rem, straffere Abstände). | `globals.css` @theme |
+| 4 | Auf kleinem Smartphone wirklich hervorragend? | Ja. Above-the-fold der Startseite zeigt jetzt Eyebrow, H1, Subline und beide CTAs; der schwebende Chat-Button überdeckt keine Footer-Links mehr; Academy weiterhin mobile-first. | Mobile Screenshots (390 px), E2E im 390×844-Viewport |
+| 5 | Bewerbung in ~2 Minuten möglich? | Ja. Unverändert ein Formular ohne Konto; jetzt inklusive vollständiger UTM-Kette. | E2E „Bewerbung in 2 Minuten … UTM landet an der Bewerbung“ |
+| 6 | Kann nicht-technischer Innendienst Stellen pflegen? | Ja. Unverändert (Formular, Vorschau, Zeitsteuerung). | `/admin/stellen` |
+| 7 | Kann Markus Websiteinhalte ohne HTML ändern? | Ja. CMS mit Versionen/Restore; E2E publiziert eine Headline-Änderung. | E2E CMS-Test |
+| 8 | Sehen Teamleiter technisch nur eigene Bewerber? | Ja – jetzt auch über alle Nebenwege: Duplikat-Hinweise sind doppelt gescopet (Ausgangs-Kandidat UND Treffer), Notizen/Wiedervorlagen validieren jede mitgesendete applicationId/referralId/assigneeId serverseitig. | `tests/permissions/teamleiter-scope.test.ts`, `tests/permissions/hardening-idor.test.ts` (A, B, C) |
+| 9 | Funktioniert die Vertretung automatisch und sicher? | Ja. Unverändert (zeitraumbasiert, keine Selbst-/Zirkel-/Kettenvertretung). | `tests/integration/delegations.test.ts` |
+| 10 | Tauchen Mitarbeiterempfehlungen sauber im Bewerbertool auf? | Ja; die Verknüpfung mit einem Bestands-Kandidaten akzeptiert nur echte Duplikat-Matches (serverseitig geprüft). | `tests/integration/referrals.test.ts`, hardening-idor (D) |
+| 11 | Bleibt Herkunft bei Konvertierung erhalten? | Ja. `Application.referralId` + übernommene Historie. | ebd. |
+| 12 | Personenbezogene Daten aus öffentlichen Responses, Logs, Analytics ferngehalten? | Ja. Zusätzlich gehärtet: eine öffentliche Bewerbung kann bestehende Candidate-Stammdaten nicht mehr verändern (immer neuer Datensatz, Zusammenführen nur manuell); IPs weiterhin nur als gesalzener Hash über vertrauenswürdige Proxy-Header. | hardening-idor (J), `src/lib/rate-limit.ts`, `docs/SECURITY_AND_PRIVACY.md` |
+| 13 | Live-Chat intern sinnvoll bearbeitbar? | Ja. Unverändert (SSE, Posteingang); Besucher können jetzt optional eine Telefonnummer für Rückrufe hinterlassen. | E2E Chat-Test |
+| 14 | Keine falschen Unternehmensdaten? | Ja. Ausschließlich §44-Daten; Rechtstext-Platzhalter werden vom Go-Live-Check als **Blocker** ausgewiesen statt jemals erfunden zu werden; Bürozeiten verbindlich Mo–Fr 08:00–17:00 aus zentralem Setting (Website, Chat, E-Mails, Academy). | `src/server/golive.ts`, `tests/integration/golive.test.ts`, D36 |
+| 15 | Alle Kernflüsse automatisiert getestet? | Ja. **79 Vitest-Tests** (Unit/Integration/Permissions, inkl. Negativtests A–D, F–K gegen manipulierte IDs, parallele Rate-Limit-/Reset-Requests, Retention-Fehlerfall, Anonymisierung) + **16 Playwright-E2E** (inkl. MFA-Pflicht-Gate, UTM-Kette, noindex, axe mit WCAG-2.0/2.1/2.2-Regeln auf Public + Admin-Login + Academy). | `npm test`, `npm run e2e` |
 
-## Abschluss-Gates (letzter Lauf)
+## Sicherheits-Selbstangriff (Korrekturpaket Punkt 27)
+
+Vor Abschluss wurden die Schutzmechanismen gezielt selbst angegriffen –
+auf Service-Ebene (Vitest-Negativtests) und per HTTP gegen den laufenden
+Production-Build:
+
+| Angriff | Ergebnis |
+| --- | --- |
+| Fremde Candidate-ID bei Duplikat-Hinweisen (Teamleiter) | abgewehrt (ForbiddenError; Treffer zusätzlich gescopet) |
+| candidateId A + applicationId B bei Notiz | abgewehrt |
+| Manipulierte applicationId/referralId/assigneeId bei Wiedervorlagen | abgewehrt (inkl. Vollzug ohne candidateId) |
+| Beliebige linkCandidateId bei Referral-Konvertierung | abgewehrt (nur echte Duplikat-Matches) |
+| Admin ohne MFA ruft /admin, /admin/bewerbungen, /admin/einstellungen direkt auf | abgewehrt (serverseitiges Gate → /admin/sicherheit) |
+| Academy-Session der fremden Kursversion lädt INTERNAL-Asset (HTTP) | abgewehrt (404; Positivkontrolle mit richtiger Version: 200) |
+| GESPERRTES bzw. nicht freigegebenes PUBLIC-Asset per direkter ID (HTTP) | abgewehrt (404) |
+| 30 parallele Requests gegen Limit 10 | exakt 10 kommen durch (atomar) |
+| Paralleler Doppelverbrauch desselben Reset-Tokens | genau ein Gewinner |
+| Öffentliche Bewerbung mit bekannter E-Mail + manipulierten Stammdaten | Bestand unverändert, Bewerbung angenommen, Duplikat erkannt |
+| Academy-Zugang nach Candidate-Anonymisierung | abgewehrt (Link und Session ungültig) |
+| X-Forwarded-For-Spoofing (führender Eintrag) | wirkungslos (letzter Hop/X-Real-IP zählt; Proxy-Pflicht dokumentiert) |
+
+Dabei gefundene und behobene Zusatzpunkte: fehlende physische Storage-Datei
+erzeugte in den Auslieferungsrouten einen 500er (jetzt sauberes 404 + Log);
+`STORAGE_LOCAL_ROOT` muss absolut gesetzt werden, weil der Standalone-Server
+sein Arbeitsverzeichnis wechselt (Playwright-Konfiguration und README
+angepasst; im Docker-Betrieb unverändert korrekt).
+
+## Abschluss-Gates (letzter Lauf, nach ALLEN Änderungen)
 
 - `npm run lint` – 0 Fehler, 0 Warnungen
 - `npm run typecheck` – fehlerfrei (TypeScript strict)
-- `npm test` – 50/50 bestanden
-- `npm run build` – erfolgreich (Standalone)
-- `npm run e2e` – 13/13 bestanden (inkl. Accessibility)
+- `npm test` – **79/79** bestanden
+- `npm run build` – erfolgreich (Standalone, inkl. Proxy/Middleware)
+- `npm run e2e` – **16/16** bestanden
+- Accessibility: axe (WCAG 2.0/2.1/2.2 A+AA-Regeln, alle Impact-Klassen außer `minor` blockierend) – 0 Verstöße; manuelle 2.2-Checkliste: `docs/ACCESSIBILITY.md`
+- `npm audit` – 0 bekannte Schwachstellen
 - Keine offenen TODO/FIXME in `src/`
-- Keine Secrets im Repository (`.env` ignoriert, Seed-Passwörter via ENV)
+- Keine Secrets im Repository

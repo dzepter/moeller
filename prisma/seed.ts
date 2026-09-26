@@ -1,9 +1,19 @@
 /**
- * Seed: Kern-Daten (Regionen, Rollen, Permissions) + Demo-Daten für Entwicklung.
+ * Seed, sauber getrennt in zwei Ebenen:
+ *
+ * PRODUCTION-BOOTSTRAP (läuft immer, auch produktiv):
+ *   Regionen, Permissions, Rollen, die echten Mitarbeitenden-Konten
+ *   (Administrator + Innendienst), öffentliche Team-Einträge und der
+ *   Academy-Kurs (echter Schulungsinhalt). Nichts davon ist Demo-Material.
+ *
+ * DEVELOPMENT-/DEMO-SEEDING (NUR außerhalb von NODE_ENV=production):
+ *   Demo-Teamleiter-Konten, Demo-Stellenanzeigen und fiktive Demo-Bewerber.
+ *   In Produktion wird dieser Block komplett übersprungen und protokolliert –
+ *   es werden dort insbesondere KEINE Stellen automatisch veröffentlicht.
+ *
  * - Idempotent (Upserts) – mehrfach ausführbar.
  * - Keine hartcodierten Passwörter: SEED_ADMIN_PASSWORD / SEED_USER_PASSWORD aus ENV,
  *   sonst Zufallspasswörter, die einmalig auf der Konsole ausgegeben werden.
- * - Demo-Daten (fiktive Bewerber etc.) nur außerhalb von production.
  */
 import { PrismaClient } from "@prisma/client";
 import { hash } from "@node-rs/argon2";
@@ -153,9 +163,14 @@ async function main() {
   await upsertUser({ email: "markus@bvg-moeller.de", name: "Markus Möller", roleKey: "ADMINISTRATOR", password: adminPassword, label: "Administrator" });
   await upsertUser({ email: "jana@bvg-moeller.de", name: "Jana Talackova", roleKey: "INNENDIENST", password: userPassword, label: "Innendienst" });
   await upsertUser({ email: "jasmin@bvg-moeller.de", name: "Jasmin Mück", roleKey: "INNENDIENST", password: userPassword, label: "Innendienst" });
-  await upsertUser({ email: "tl-nrw@bvg-moeller.de", name: "Teamleitung NRW (Demo)", roleKey: "TEAMLEITER", regionKey: "NRW", password: userPassword, label: "Teamleiter NRW" });
-  await upsertUser({ email: "tl-hessen@bvg-moeller.de", name: "Teamleitung Hessen (Demo)", roleKey: "TEAMLEITER", regionKey: "HESSEN", password: userPassword, label: "Teamleiter Hessen" });
-  await upsertUser({ email: "tl-bayern@bvg-moeller.de", name: "Teamleitung Bayern (Demo)", roleKey: "TEAMLEITER", regionKey: "BAYERN", password: userPassword, label: "Teamleiter Bayern" });
+
+  // Demo-Teamleiter: NUR Entwicklung. Echte Teamleiter werden produktiv über
+  // die Benutzerverwaltung angelegt (Region + Rolle dort zuweisbar).
+  if (!isProd) {
+    await upsertUser({ email: "tl-nrw@bvg-moeller.de", name: "Teamleitung NRW (Demo)", roleKey: "TEAMLEITER", regionKey: "NRW", password: userPassword, label: "Teamleiter NRW" });
+    await upsertUser({ email: "tl-hessen@bvg-moeller.de", name: "Teamleitung Hessen (Demo)", roleKey: "TEAMLEITER", regionKey: "HESSEN", password: userPassword, label: "Teamleiter Hessen" });
+    await upsertUser({ email: "tl-bayern@bvg-moeller.de", name: "Teamleitung Bayern (Demo)", roleKey: "TEAMLEITER", regionKey: "BAYERN", password: userPassword, label: "Teamleiter Bayern" });
+  }
 
   // ---------- Team-Bereich (öffentlich, aktivierbar) ----------
   for (const [i, member] of [
@@ -168,7 +183,7 @@ async function main() {
     }
   }
 
-  // ---------- Demo-Jobs ----------
+  // ---------- Demo-Jobs (NUR Entwicklung – Produktion veröffentlicht nichts automatisch) ----------
   const demoJobs = [
     {
       slug: "promotor-leh-nrw",
@@ -287,18 +302,22 @@ async function main() {
     },
   ];
 
-  for (const job of demoJobs) {
-    await db.job.upsert({
-      where: { slug: job.slug },
-      update: {},
-      create: {
-        ...job,
-        description: { text: "" },
-        status: "VEROEFFENTLICHT",
-        publishedAt: new Date(),
-        cvUploadEnabled: false,
-      },
-    });
+  if (!isProd) {
+    for (const job of demoJobs) {
+      await db.job.upsert({
+        where: { slug: job.slug },
+        update: {},
+        create: {
+          ...job,
+          description: { text: "" },
+          status: "VEROEFFENTLICHT",
+          publishedAt: new Date(),
+          cvUploadEnabled: false,
+        },
+      });
+    }
+  } else {
+    console.log("Production-Bootstrap: Demo-Stellen, Demo-Teamleiter und Demo-Bewerber werden übersprungen.");
   }
 
   // ---------- Fiktive Demo-Bewerber (nur Entwicklung) ----------

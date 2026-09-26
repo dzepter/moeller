@@ -22,8 +22,10 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // RATE_LIMIT_DISABLED gilt nur für Tests und wird produktiv ignoriert (env.rateLimitDisabled)
-    command: "PORT=3200 RATE_LIMIT_DISABLED=true node .next/standalone/server.js",
+    // RATE_LIMIT_DISABLED gilt nur für Tests. STORAGE_LOCAL_ROOT absolut, weil
+    // der Standalone-Server sein Arbeitsverzeichnis nach .next/standalone wechselt
+    // und ein relativer Pfad sonst ins Leere zeigt.
+    command: 'PORT=3200 RATE_LIMIT_DISABLED=true STORAGE_LOCAL_ROOT="$PWD/var/uploads" node .next/standalone/server.js',
     url: "http://localhost:3200",
     reuseExistingServer: true,
     timeout: 30_000,

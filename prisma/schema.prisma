@@ -652,10 +652,14 @@ model PrivateFile {
   mime         String
   size         Int
   createdAt    DateTime   @default(now())
+  // Retention: erst markieren (Transaktion), dann Storage löschen, dann Zeile
+  // entfernen. Markierte Dateien gelten als gelöscht und werden nie ausgeliefert.
+  pendingDeletionAt DateTime?
 
   application Application?
 
   @@index([candidateId])
+  @@index([pendingDeletionAt])
 }
 
 // Innendienst-/Team-Bereich (öffentlich, optional aktivierbar – Masterprompt §13)

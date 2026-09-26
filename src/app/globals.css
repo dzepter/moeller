@@ -195,6 +195,8 @@ h4 {
   text-underline-offset: 3px;
   transition: color 150ms var(--ease-out-soft);
 }
-.prose-link:hover {
+.prose-link:hover,
+.prose-link:active {
   color: var(--color-brand-deep);
+  text-decoration-thickness: 2px;
 }

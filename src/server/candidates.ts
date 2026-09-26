@@ -154,6 +154,14 @@ export async function reassignApplication(
   if (!(await canAccessApplication(user, application))) throw new ForbiddenError();
 
   const regionId = params.regionId ?? application.responsibleRegionId;
+  // Ziel-IDs serverseitig verifizieren: Region muss existieren, eine
+  // zugewiesene Person muss ein aktiver Benutzer sein.
+  const region = await db.region.findUnique({ where: { id: regionId }, select: { id: true } });
+  if (!region) throw new Error("Die gewählte Region existiert nicht.");
+  if (params.assignedUserId) {
+    const assignee = await db.user.findUnique({ where: { id: params.assignedUserId }, select: { active: true } });
+    if (!assignee?.active) throw new Error("Die gewählte Person ist nicht (mehr) aktiv.");
+  }
   await db.$transaction([
     db.application.update({
       where: { id: applicationId },
@@ -186,6 +194,14 @@ export async function reassignApplication(
 export async function addNote(user: CurrentUser, params: { candidateId: string; applicationId?: string; body: string }) {
   if (!hasPermission(user, "candidates.write")) throw new ForbiddenError();
   await assertCandidateAccess(user, params.candidateId);
+  // Relationale Integrität: eine mitgesendete applicationId muss wirklich zu
+  // diesem Kandidaten gehören UND für den Benutzer sichtbar sein – sonst ließe
+  // sich eine Notiz per manipulierter ID an fremde Akten hängen.
+  if (params.applicationId) {
+    const application = await db.application.findUnique({ where: { id: params.applicationId } });
+    if (!application || application.candidateId !== params.candidateId) throw new ForbiddenError();
+    if (!(await canAccessApplication(user, application))) throw new ForbiddenError();
+  }
   const note = await db.candidateNote.create({
     data: { candidateId: params.candidateId, applicationId: params.applicationId, authorId: user.id, body: params.body },
   });
@@ -220,10 +236,30 @@ export async function createReminder(
   },
 ) {
   if (!hasPermission(user, "candidates.write")) throw new ForbiddenError();
-  if (params.candidateId) await assertCandidateAccess(user, params.candidateId);
+
+  // Jede mitgesendete ID wird serverseitig verifiziert – die Objektprüfung
+  // darf sich nicht durch Weglassen oder Vertauschen von IDs umgehen lassen.
+  let candidateId = params.candidateId;
+  if (params.applicationId) {
+    const application = await db.application.findUnique({ where: { id: params.applicationId } });
+    if (!application) throw new ForbiddenError();
+    if (candidateId && application.candidateId !== candidateId) throw new ForbiddenError();
+    if (!(await canAccessApplication(user, application))) throw new ForbiddenError();
+    candidateId = application.candidateId; // Kandidat immer aus der Bewerbung ableiten
+  } else if (candidateId) {
+    await assertCandidateAccess(user, candidateId);
+  }
+  if (params.referralId) {
+    if (!hasPermission(user, "referrals.manage")) throw new ForbiddenError();
+    const referral = await db.referral.findUnique({ where: { id: params.referralId } });
+    if (!referral || referral.anonymizedAt) throw new ForbiddenError();
+  }
+  const assignee = await db.user.findUnique({ where: { id: params.assigneeId }, select: { active: true } });
+  if (!assignee?.active) throw new Error("Die verantwortliche Person ist nicht (mehr) aktiv.");
+
   const reminder = await db.reminder.create({
     data: {
-      candidateId: params.candidateId,
+      candidateId,
       applicationId: params.applicationId,
       referralId: params.referralId,
       dueDate: new Date(params.dueDate),
@@ -240,7 +276,17 @@ export async function createReminder(
 export async function completeReminder(user: CurrentUser, reminderId: string) {
   if (!hasPermission(user, "candidates.write")) throw new ForbiddenError();
   const reminder = await db.reminder.findUniqueOrThrow({ where: { id: reminderId } });
-  if (reminder.candidateId) await assertCandidateAccess(user, reminder.candidateId);
+  if (reminder.candidateId) {
+    await assertCandidateAccess(user, reminder.candidateId);
+  } else if (reminder.applicationId) {
+    const application = await db.application.findUnique({ where: { id: reminder.applicationId } });
+    if (!application || !(await canAccessApplication(user, application))) throw new ForbiddenError();
+  } else if (reminder.referralId) {
+    if (!hasPermission(user, "referrals.manage")) throw new ForbiddenError();
+  } else if (reminder.assigneeId !== user.id && reminder.createdById !== user.id && !hasPermission(user, "candidates.read.all")) {
+    // Freie Wiedervorlagen ohne Objektbezug: nur Verantwortliche/Ersteller
+    throw new ForbiddenError();
+  }
   await db.reminder.update({ where: { id: reminderId }, data: { done: true, doneAt: new Date() } });
   await audit({ action: "reminder.completed", actorId: user.id, entityType: "Reminder", entityId: reminderId });
 }

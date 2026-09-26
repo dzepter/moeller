@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { getSetting } from "@/lib/settings";
 import { PageHeader, Card } from "@/components/admin/ui";
 import { SettingsForm, TeamMemberEditor } from "@/components/admin/settings-widgets";
+import { runGoLiveChecks } from "@/server/golive";
 
 export const metadata: Metadata = { title: "Einstellungen" };
 
@@ -71,6 +72,7 @@ export default async function EinstellungenPage() {
     getSetting("referrals.consentText"),
     db.teamMember.findMany({ orderBy: { sortOrder: "asc" } }),
   ]);
+  const goLive = await runGoLiveChecks();
 
   return (
     <>
@@ -79,6 +81,34 @@ export default async function EinstellungenPage() {
         description="Zentrale Konfiguration: Kontakt, Öffnungszeiten, Benachrichtigungen, Features. Änderungen wirken sofort auf der Website."
       />
       <div className="space-y-5">
+        {goLive.length > 0 ? (
+          <section
+            aria-labelledby="golive-h"
+            className={`border p-4 ${goLive.some((f) => f.level === "BLOCKER") ? "border-danger bg-danger-wash" : "border-accent bg-warn-wash"}`}
+          >
+            <h2 id="golive-h" className="text-base font-bold text-ink">
+              Go-Live-Check: {goLive.filter((f) => f.level === "BLOCKER").length} Blocker,{" "}
+              {goLive.filter((f) => f.level === "WARNUNG").length} Warnungen
+            </h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              Diese Punkte müssen vor dem Produktivstart erledigt bzw. bewusst entschieden sein. Rechtstexte werden
+              nicht automatisch befüllt – die echten Angaben liefert die Geschäftsführung.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {goLive.map((f, i) => (
+                <li key={i} className="text-sm">
+                  <span className={`font-bold ${f.level === "BLOCKER" ? "text-danger" : "text-ink"}`}>{f.level}</span>{" "}
+                  · <span className="font-semibold">{f.bereich}:</span> <span className="text-ink-soft">{f.text}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : (
+          <p className="border border-positive bg-positive-wash p-3 text-sm text-positive">
+            Go-Live-Check: keine offenen Blocker oder Warnungen.
+          </p>
+        )}
+
         <Card title="Kontakt & Öffnungszeiten">
           <SettingsForm
             section="kontakt"
@@ -93,7 +123,7 @@ export default async function EinstellungenPage() {
               { name: "city", label: "Ort", value: address.city },
               { name: "hoursFrom", label: "Erreichbar von (HH:MM)", value: hours.windows[0]?.from ?? "08:00" },
               { name: "hoursTo", label: "Erreichbar bis (HH:MM)", value: hours.windows[hours.windows.length - 1]?.to ?? "17:00" },
-              { name: "hoursLabel", label: "Anzeigetext Erreichbarkeit", value: hours.label, wide: true, help: "Hinweis: Die Schulungsunterlagen nennen 09–12/13–17 Uhr – bitte final klären (siehe Training-Audit)." },
+              { name: "hoursLabel", label: "Anzeigetext Erreichbarkeit", value: hours.label, wide: true, help: "Verbindlich geklärt: Mo–Fr 08:00–17:00 Uhr durchgehend (die 09–12/13–17-Angabe der alten Schulungsunterlagen ist überholt)." },
             ]}
           />
         </Card>

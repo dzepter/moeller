@@ -141,7 +141,10 @@ const MODULES: ModuleDef[] = [
               "Telefon: 06725 91 93 50",
               "E-Mail: info@bvg-moeller.de",
               "Adresse: Max-Planck-Str. 8, 55435 Gau-Algesheim",
-              "Die aktuellen Erreichbarkeitszeiten findest Du auf www.bvg-moeller.de/kontakt.",
+              // Verbindlich geklärt (Korrekturpaket Punkt 20): durchgehend 08:00–17:00 Uhr.
+              // Die 09–12/13–17-Angabe der alten Schulungsfolie ist überholt.
+              "Erreichbar: Montag bis Freitag, 08:00–17:00 Uhr (durchgehend)",
+              "Aktuelle Zeiten findest Du immer auf www.bvg-moeller.de/kontakt.",
             ],
           },
         ],

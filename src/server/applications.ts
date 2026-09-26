@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { normalizeEmail, normalizePhone } from "@/lib/utils";
-import { regionForBundesland } from "@/lib/rbac";
+import { regionForBundesland, candidateScope, hasPermission, ForbiddenError, type CurrentUser } from "@/lib/rbac";
 import { getSetting } from "@/lib/settings";
 import { sendMail } from "@/lib/email";
 import { tplEingangsbestaetigung, tplNeueBewerbungIntern } from "@/lib/email/templates";
@@ -36,11 +36,11 @@ export async function submitApplication(
   const consentText = await getSetting("applications.consentText");
   const responsibleRegionId = await regionForBundesland(input.bundesland);
 
-  // Kandidat wiederverwenden, wenn E-Mail exakt passt (kein automatisches Mergen darüber hinaus)
-  const existing = await db.candidate.findFirst({
-    where: { emailNormalized, anonymizedAt: null },
-    orderBy: { createdAt: "desc" },
-  });
+  // Bewusst KEINE Wiederverwendung bestehender Kandidaten anhand der E-Mail:
+  // eine unauthentifizierte öffentliche Bewerbung darf vorhandene, intern
+  // gepflegte Stammdaten weder überschreiben noch sich an fremde Datensätze
+  // anhängen. Duplikate erkennt findDuplicateHints(); zusammengeführt wird
+  // ausschließlich manuell durch den Innendienst (mergeCandidates).
 
   // Optionaler Lebenslauf
   let cvFileId: string | undefined;
@@ -53,31 +53,19 @@ export async function submitApplication(
   }
 
   const result = await db.$transaction(async (tx) => {
-    const candidate = existing
-      ? await tx.candidate.update({
-          where: { id: existing.id },
-          data: {
-            firstName: input.firstName,
-            lastName: input.lastName,
-            phone: input.phone,
-            phoneNormalized,
-            city: input.city,
-            bundesland: input.bundesland,
-          },
-        })
-      : await tx.candidate.create({
-          data: {
-            firstName: input.firstName,
-            lastName: input.lastName,
-            email: input.email,
-            emailNormalized,
-            phone: input.phone,
-            phoneNormalized,
-            city: input.city,
-            bundesland: input.bundesland,
-            source,
-          },
-        });
+    const candidate = await tx.candidate.create({
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+        emailNormalized,
+        phone: input.phone,
+        phoneNormalized,
+        city: input.city,
+        bundesland: input.bundesland,
+        source,
+      },
+    });
 
     if (opts?.cv && job?.cvUploadEnabled) {
       const fileName = randomFileName(opts.cv.name);
@@ -162,7 +150,11 @@ export async function submitApplication(
     });
   }
   await track("bewerbung_abgeschickt");
-  const confirm = tplEingangsbestaetigung({ firstName: input.firstName, stelle: job?.title ?? null });
+  const contact = {
+    hoursLabel: (await getSetting("contact.openingHours")).label,
+    phone: await getSetting("contact.phone"),
+  };
+  const confirm = tplEingangsbestaetigung({ firstName: input.firstName, stelle: job?.title ?? null, contact });
   await sendMail({
     to: input.email,
     subject: confirm.subject,
@@ -175,18 +167,33 @@ export async function submitApplication(
   return result;
 }
 
-/** Duplikat-Hinweise für die interne Ansicht (kein automatisches Mergen). */
-export async function findDuplicateHints(candidateId: string) {
-  const candidate = await db.candidate.findUnique({ where: { id: candidateId } });
-  if (!candidate) return [];
+/**
+ * Duplikat-Hinweise für die interne Ansicht (kein automatisches Mergen).
+ * Serverseitig doppelt gescopet: der Ausgangs-Kandidat muss für den Benutzer
+ * sichtbar sein (sonst ForbiddenError, kein IDOR über geratene IDs), und die
+ * zurückgegebenen Treffer bleiben auf den eigenen Sichtbarkeitsbereich
+ * beschränkt – ein Teamleiter sieht keine PII aus fremden Regionen.
+ */
+export async function findDuplicateHints(user: CurrentUser, candidateId: string) {
+  if (!hasPermission(user, "candidates.read.all") && !hasPermission(user, "candidates.read.regional")) {
+    throw new ForbiddenError();
+  }
+  const scope = await candidateScope(user);
+  const candidate = await db.candidate.findFirst({ where: { AND: [{ id: candidateId }, scope] } });
+  if (!candidate) throw new ForbiddenError();
   return db.candidate.findMany({
     where: {
-      id: { not: candidate.id },
-      anonymizedAt: null,
-      OR: [
-        { emailNormalized: candidate.emailNormalized },
-        { phoneNormalized: candidate.phoneNormalized },
-        { AND: [{ lastName: { equals: candidate.lastName, mode: "insensitive" } }, { city: { equals: candidate.city, mode: "insensitive" } }] },
+      AND: [
+        scope,
+        {
+          id: { not: candidate.id },
+          anonymizedAt: null,
+          OR: [
+            { emailNormalized: candidate.emailNormalized },
+            { phoneNormalized: candidate.phoneNormalized },
+            { AND: [{ lastName: { equals: candidate.lastName, mode: "insensitive" } }, { city: { equals: candidate.city, mode: "insensitive" } }] },
+          ],
+        },
       ],
     },
     select: { id: true, firstName: true, lastName: true, city: true, email: true, phone: true, createdAt: true },

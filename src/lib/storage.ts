@@ -127,15 +127,81 @@ export function randomFileName(originalName: string): string {
   return `${dir}/${generateToken().slice(0, 32)}.${ext}`;
 }
 
-/** Malware-Scan-Adapter (No-op-Default; ClamAV o. ä. andockbar). */
+/**
+ * Malware-Scan-Adapter für Bewerber-Uploads.
+ *
+ * Provider (MALWARE_SCANNER):
+ * - "none" (Default): KEIN Scan. Das ist ausdrücklich kein Schutz, sondern ein
+ *   dokumentiertes Restrisiko – der Go-Live-Check warnt entsprechend.
+ * - "clamav": Scan über einen laufenden clamd (CLAMAV_HOST/CLAMAV_PORT,
+ *   INSTREAM-Protokoll, ohne Zusatzabhängigkeit). FAIL-CLOSED: Ist Scanning
+ *   konfiguriert, aber der Scanner nicht erreichbar, gilt die Datei als NICHT
+ *   geprüft und wird abgelehnt – es wird niemals stillschweigend so getan,
+ *   als wäre gescannt worden.
+ */
 export interface MalwareScanner {
-  scan(data: Buffer): Promise<{ clean: boolean; signature?: string }>;
+  scan(data: Buffer): Promise<{ clean: boolean; reason?: string }>;
 }
-export const malwareScanner: MalwareScanner = {
-  async scan() {
-    return { clean: true };
-  },
-};
+
+class NoopScanner implements MalwareScanner {
+  async scan(): Promise<{ clean: boolean }> {
+    return { clean: true }; // bewusst ungeprüft – siehe Doku/Go-Live-Check
+  }
+}
+
+class ClamAvScanner implements MalwareScanner {
+  async scan(data: Buffer): Promise<{ clean: boolean; reason?: string }> {
+    const { host, port, timeoutMs } = env.malwareScanner.clamav;
+    try {
+      const response = await clamdInstream(host, port, timeoutMs, data);
+      if (/\bOK$/.test(response)) return { clean: true };
+      const found = response.match(/:\s*(.+)\s+FOUND$/);
+      return { clean: false, reason: found?.[1] ?? response };
+    } catch (err) {
+      console.error("[malware-scan] clamd nicht erreichbar – Upload wird abgelehnt (fail closed):", err instanceof Error ? err.message : err);
+      return { clean: false, reason: "Scanner nicht erreichbar" };
+    }
+  }
+}
+
+/** clamd INSTREAM: zINSTREAM\0, dann Chunks (4-Byte-BE-Länge + Daten), Ende = Länge 0. */
+async function clamdInstream(host: string, port: number, timeoutMs: number, data: Buffer): Promise<string> {
+  const { createConnection } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host, port });
+    const chunks: Buffer[] = [];
+    const fail = (err: Error) => {
+      socket.destroy();
+      reject(err);
+    };
+    socket.setTimeout(timeoutMs, () => fail(new Error("clamd-Timeout")));
+    socket.on("error", fail);
+    socket.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    socket.on("close", () => {
+      const response = Buffer.concat(chunks).toString("utf8").replace(/\0.*$/s, "").trim();
+      if (!response) reject(new Error("Leere clamd-Antwort"));
+      else resolve(response);
+    });
+    socket.on("connect", () => {
+      socket.write("zINSTREAM\0");
+      const CHUNK = 64 * 1024;
+      for (let offset = 0; offset < data.length; offset += CHUNK) {
+        const part = data.subarray(offset, offset + CHUNK);
+        const len = Buffer.alloc(4);
+        len.writeUInt32BE(part.length, 0);
+        socket.write(len);
+        socket.write(part);
+      }
+      socket.write(Buffer.alloc(4)); // Länge 0 = Ende
+    });
+  });
+}
+
+export function createMalwareScanner(provider: "none" | "clamav"): MalwareScanner {
+  return provider === "clamav" ? new ClamAvScanner() : new NoopScanner();
+}
+
+export const malwareScanner: MalwareScanner = createMalwareScanner(env.malwareScanner.provider);
 
 export function etagFor(data: Buffer): string {
   return `"${createHash("sha1").update(data).digest("hex")}"`;

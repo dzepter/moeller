@@ -69,6 +69,10 @@ export async function runAcademyReminders(now = new Date()): Promise<{ sent: num
       firstName: a.candidate.firstName,
       courseTitle: a.courseVersion.course.title,
       link: `${env.baseUrl}/academy/${token}`,
+      contact: {
+        hoursLabel: (await getSetting("contact.openingHours")).label,
+        phone: await getSetting("contact.phone"),
+      },
     });
     await sendMail({
       to: email,

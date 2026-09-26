@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getSession } from "@/lib/auth/session";
 import { getCurrentUser, hasPermission, type PermissionKey } from "@/lib/rbac";
+import { getSetting } from "@/lib/settings";
 import { AdminNav, type NavItem } from "@/components/admin/nav";
 import { logoutAction } from "@/app/actions/auth";
 import { initials } from "@/lib/utils";
@@ -37,6 +39,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (session.user.mustChangePassword) redirect("/admin/passwort-aendern");
   const user = await getCurrentUser();
   if (!user) redirect("/admin/login");
+
+  // Zentrales MFA-Pflicht-Gate: Administratoren ohne eingerichtete MFA
+  // erreichen ausschließlich die Einrichtungsseite (und deren Actions/Logout).
+  // Die Prüfung liegt im Layout, damit auch direkt aufgerufene /admin/…-URLs
+  // erfasst sind; der Pfad kommt aus der Middleware (x-pathname).
+  if (!user.mfaEnabled && user.roleKeys.includes("ADMINISTRATOR")) {
+    const mfaForAdmins = await getSetting("security.mfaRequiredForAdmins");
+    if (mfaForAdmins) {
+      const pathname = (await headers()).get("x-pathname");
+      if (pathname !== null && !pathname.startsWith("/admin/sicherheit")) {
+        redirect("/admin/sicherheit?pflicht=1");
+      }
+    }
+  }
 
   const items = NAV_DEF.filter((item) => {
     if (!item.permission) return true;

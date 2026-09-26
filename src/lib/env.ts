@@ -56,6 +56,19 @@ export const env = {
       };
     },
   },
+  malwareScanner: {
+    /** "none" (Default, KEIN Schutz – nur dokumentiertes Restrisiko) oder "clamav" (clamd über TCP). */
+    get provider() {
+      return process.env.MALWARE_SCANNER === "clamav" ? ("clamav" as const) : ("none" as const);
+    },
+    get clamav() {
+      return {
+        host: process.env.CLAMAV_HOST ?? "127.0.0.1",
+        port: Number(process.env.CLAMAV_PORT ?? 3310),
+        timeoutMs: Number(process.env.CLAMAV_TIMEOUT_MS ?? 10_000),
+      };
+    },
+  },
   storage: {
     get provider() {
       return process.env.STORAGE_PROVIDER === "s3" ? ("s3" as const) : ("local" as const);

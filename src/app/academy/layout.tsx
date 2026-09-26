@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { getSetting } from "@/lib/settings";
 
 export const metadata: Metadata = {
   title: { default: "Möller Academy", template: "%s – Möller Academy" },
   robots: { index: false, follow: false },
 };
 
-export default function AcademyLayout({ children }: { children: React.ReactNode }) {
+export default async function AcademyLayout({ children }: { children: React.ReactNode }) {
+  const [phone, hours] = await Promise.all([getSetting("contact.phone"), getSetting("contact.openingHours")]);
   return (
     <div className="min-h-dvh bg-paper-warm">
       <a href="#inhalt" className="skip-link">
@@ -25,7 +27,7 @@ export default function AcademyLayout({ children }: { children: React.ReactNode 
         {children}
       </main>
       <footer className="mx-auto max-w-3xl px-4 pb-8 text-center text-xs text-ink-mute">
-        Fragen? Ruf uns an: 06725 / 919350 (Mo–Fr) · Möller GmbH
+        Fragen? Ruf uns an: {phone} ({hours.label}) · Möller GmbH
       </footer>
     </div>
   );

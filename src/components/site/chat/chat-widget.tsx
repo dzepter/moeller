@@ -15,7 +15,7 @@ export function ChatWidget() {
   const [businessOpen, setBusinessOpen] = useState<boolean | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
-  const [contact, setContact] = useState({ name: "", email: "" });
+  const [contact, setContact] = useState({ name: "", email: "", phone: "" });
   const [started, setStarted] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +110,7 @@ export function ChatWidget() {
           body,
           name: contact.name || undefined,
           email: contact.email || undefined,
+          phone: contact.phone || undefined,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -181,7 +182,7 @@ export function ChatWidget() {
             {messages.length === 0 ? (
               <div className="rounded-[2px] bg-white p-3.5 text-[0.95rem] text-ink-soft shadow-sm">
                 {businessOpen === false ? (
-                  <>Hallo! Gerade sind wir nicht am Platz (Mo–Fr erreichbar). Schreib uns trotzdem – wir melden uns am nächsten Werktag. Wenn Du magst, lass Name und E-Mail da.</>
+                  <>Hallo! Gerade sind wir nicht am Platz (Mo–Fr erreichbar). Schreib uns trotzdem – wir melden uns am nächsten Werktag. Wenn Du magst, lass Name, E-Mail oder Telefonnummer da.</>
                 ) : (
                   <>Hallo! Hier schreibst Du direkt mit unserem Innendienst – keine Bots, versprochen. Wie können wir helfen?</>
                 )}
@@ -223,6 +224,18 @@ export function ChatWidget() {
                     onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
                     placeholder="E-Mail (optional)"
                     autoComplete="email"
+                    className="w-full rounded-[2px] border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  />
+                </label>
+                <label className="col-span-2">
+                  <span className="sr-only">Deine Telefonnummer (optional)</span>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={contact.phone}
+                    onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))}
+                    placeholder="Telefon (optional – für Rückruf außerhalb der Bürozeiten)"
+                    autoComplete="tel"
                     className="w-full rounded-[2px] border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none"
                   />
                 </label>

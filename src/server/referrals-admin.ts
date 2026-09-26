@@ -49,6 +49,37 @@ export async function convertReferral(user: CurrentUser, referralId: string, opt
   const email = referral.referredEmail ?? `keine-email-${referral.id}@invalid.local`;
   const phone = referral.referredPhone ?? "";
 
+  // Eine mitgegebene linkCandidateId wird serverseitig verifiziert: Der
+  // Kandidat muss ein plausibler Duplikat-Match zur empfohlenen Person sein
+  // (gleiche Kriterien wie die Duplikat-Hinweise). Eine beliebige, nur der UI
+  // entnommene Candidate-ID reicht ausdrücklich nicht.
+  if (opts?.linkCandidateId) {
+    const referredEmailNorm = referral.referredEmail ? normalizeEmail(referral.referredEmail) : null;
+    const referredPhoneNorm = referral.referredPhone ? normalizePhone(referral.referredPhone) : null;
+    const match = await db.candidate.findFirst({
+      where: {
+        id: opts.linkCandidateId,
+        anonymizedAt: null,
+        OR: [
+          ...(referredEmailNorm ? [{ emailNormalized: referredEmailNorm }] : []),
+          ...(referredPhoneNorm ? [{ phoneNormalized: referredPhoneNorm }] : []),
+          {
+            AND: [
+              { lastName: { equals: referral.referredLastName, mode: "insensitive" as const } },
+              ...(referral.referredCity
+                ? [{ city: { equals: referral.referredCity, mode: "insensitive" as const } }]
+                : []),
+            ],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!match) {
+      throw new Error("Der gewählte Bewerber passt nicht zur empfohlenen Person (kein Duplikat-Treffer).");
+    }
+  }
+
   const result = await db.$transaction(async (tx) => {
     const candidate = opts?.linkCandidateId
       ? await tx.candidate.findUniqueOrThrow({ where: { id: opts.linkCandidateId } })

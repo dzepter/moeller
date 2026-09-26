@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { expectNoA11yViolations } from "./a11y";
 
 /** Interne Kernflüsse: Bewerbung bearbeiten, Chat beantworten, CMS publizieren, Academy. */
 
@@ -8,15 +9,42 @@ async function login(page: Page, email: string) {
   await page.fill("#login-password", "E2e!Passwort2026");
   await page.getByRole("button", { name: "Anmelden" }).click();
   // Warten, bis die Login-Seite wirklich verlassen wurde (nicht /admin/login matchen!)
-  await page.waitForURL((url) => url.pathname.startsWith("/admin") && !url.pathname.startsWith("/admin/login"), {
+  await page.waitForURL((url) => url.pathname.startsWith("/admin") && url.pathname !== "/admin/login", {
     timeout: 20_000,
   });
+  // e2e-admin hat MFA eingerichtet (global-setup) → echten TOTP-Login durchlaufen
+  if (page.url().includes("/admin/login/mfa")) {
+    const { generateSync } = await import("otplib");
+    const secret = process.env.E2E_ADMIN_TOTP_SECRET;
+    if (!secret) throw new Error("E2E_ADMIN_TOTP_SECRET fehlt (global-setup nicht gelaufen?)");
+    await page.fill("#mfa-code", generateSync({ secret }));
+    await page.locator("form button[type=submit]").first().click();
+    await page.waitForURL((url) => url.pathname.startsWith("/admin") && !url.pathname.startsWith("/admin/login"), {
+      timeout: 20_000,
+    });
+  }
 }
 
 test.describe("Interner Bereich", () => {
   test("Login-Schutz: /admin ohne Session leitet zum Login", async ({ page }) => {
     await page.goto("/admin");
     await page.waitForURL("**/admin/login");
+    await expectNoA11yViolations(page);
+  });
+
+  test("MFA-Pflicht: Admin ohne MFA erreicht nur die Einrichtungsseite", async ({ page }) => {
+    await page.goto("/admin/login");
+    await page.fill("#login-email", "e2e-admin-ohne-mfa@test.local");
+    await page.fill("#login-password", "E2e!Passwort2026");
+    await page.getByRole("button", { name: "Anmelden" }).click();
+    await page.waitForURL(/\/admin\/sicherheit\?pflicht=1/, { timeout: 20_000 });
+
+    // Direkter Aufruf normaler Admin-URLs muss serverseitig zur Einrichtung zwingen
+    for (const target of ["/admin", "/admin/bewerbungen", "/admin/einstellungen"]) {
+      await page.goto(target);
+      await page.waitForURL(/\/admin\/sicherheit/);
+    }
+    await expect(page.getByText(/Zwei-Faktor/i).first()).toBeVisible();
   });
 
   test("Innendienst: Bewerbung finden, Status setzen, Wiedervorlage anlegen", async ({ page }) => {
@@ -97,8 +125,13 @@ test.describe("Interner Bereich", () => {
     await page.getByRole("button", { name: "Speichern & veröffentlichen" }).click();
     await expect(page.getByText("Gespeichert.")).toBeVisible();
 
+    // Veröffentlichung ist ohne Rebuild live; direkt nach Serverstart kann der
+    // allererste Render minimal hinterherhängen → mit Reload nachfassen.
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText(`[${unique}]`);
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByRole("heading", { level: 1 })).toContainText(`[${unique}]`, { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
 
     // Aufräumen: alte Version wiederherstellen (Version 1 = erste)
     await page.goto("/admin/website/home");
@@ -157,18 +190,26 @@ test.describe("Interner Bereich", () => {
     const token = mail?.bodyText.match(/\/academy\/([A-Za-z0-9_-]{20,})/)?.[1];
     expect(token).toBeTruthy();
 
-    // Teilnehmer öffnet Link in frischem Kontext (mobil)
-    const learner = await context.browser()!.newPage({ viewport: { width: 390, height: 844 }, baseURL: page.url().split("/").slice(0, 3).join("/") });
+    // Teilnehmer öffnet Link in frischem Kontext (mobil); expliziter Kontext,
+    // weil axe-core keine Pages aus impliziten Kontexten analysiert
+    const learnerCtx = await context.browser()!.newContext({
+      viewport: { width: 390, height: 844 },
+      baseURL: page.url().split("/").slice(0, 3).join("/"),
+    });
+    const learner = await learnerCtx.newPage();
     await learner.goto(`/academy/${token}`);
     await learner.waitForURL("**/academy/kurs");
     await expect(learner.getByText("Dein Fortschritt", { exact: true })).toBeVisible();
+    await expectNoA11yViolations(learner);
     await learner.getByRole("link", { name: /Loslegen:/ }).click();
+    await learner.waitForURL(/\/academy\/lektion\//);
+    await expectNoA11yViolations(learner);
     await learner.getByRole("button", { name: /Lektion abschließen/ }).click();
     await learner.waitForURL(/\/academy\/(lektion|kurs)/);
 
     // Fortschritt im Admin sichtbar
     await page.goto("/admin/academy");
     await expect(page.getByText(`Academy Kandidat-${unique}`)).toBeVisible();
-    await learner.close();
+    await learnerCtx.close();
   });
 });

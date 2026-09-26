@@ -214,6 +214,30 @@ describe("Academy: Fortschritt, Quiz, Abschluss, Versionierung", () => {
   });
 });
 
+describe("K: Academy-Zugang endet mit der Anonymisierung des Kandidaten", () => {
+  it("gültige Einladung → nach Anonymisierung kein Zugang mehr; Abschlussdaten bleiben", async () => {
+    const { nrw } = await createRegions();
+    await createCourse();
+    const { candidate } = await createCandidateWithApplication({ bundesland: "NRW", regionId: nrw.id, manualStatus: "ZUSAGE" });
+    const jana = asCurrentUser(await createUser({ name: "Jana" }), INNENDIENST_PERMS);
+    const assignment = await startOnboarding(jana, candidate.id);
+    const token = await getToken(assignment.id);
+
+    // Vorher: Link funktioniert
+    expect(await resolveInvitation(token)).not.toBeNull();
+
+    // Kandidat wird anonymisiert (Datenschutz-Löschung)
+    await db.candidate.update({ where: { id: candidate.id }, data: { anonymizedAt: new Date() } });
+
+    // Nachher: derselbe, formal noch gültige Magic-Link gewährt KEINEN Zugang mehr
+    expect(await resolveInvitation(token)).toBeNull();
+
+    // Historische Zuordnungsdaten (Assignment) bleiben datenschutzgerecht erhalten
+    const kept = await db.trainingAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
+    expect(kept.courseVersionId).toBeTruthy();
+  });
+});
+
 describe("Academy: Erinnerungen", () => {
   it("erinnert Nicht-Starter mit frischem Magic-Link, nur einmal, nie nach Widerruf", async () => {
     const { nrw } = await createRegions();

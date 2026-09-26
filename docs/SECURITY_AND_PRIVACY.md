@@ -51,7 +51,7 @@ Zentral in `next.config.ts`/Middleware:
 - Uploads (Lebenslauf, Medien): Größenlimit (Default 10 MB), Extension- **und** Magic-Byte-Prüfung
   (PDF/JPG/PNG/WebP), Dateinamen randomisiert, Speicherung **außerhalb** `public/`.
   Private Dateien nur über autorisierte Streaming-Route mit Berechtigungsprüfung; optionaler
-  `MalwareScanner`-Adapter (No-op-Default, ClamAV-Anbindung vorbereitet).
+  `MalwareScanner`-Adapter: Default `MALWARE_SCANNER=none` ist ausdrücklich KEIN Schutz (Uploads werden nicht geprüft; der Go-Live-Check warnt). Mit `MALWARE_SCANNER=clamav` läuft jeder Upload über clamd (INSTREAM) und gilt FAIL-CLOSED: ist der Scanner nicht erreichbar, wird der Upload abgelehnt – niemals stillschweigend als geprüft behandelt.
 - CMS-Medien (öffentlich) und Bewerber-/Academy-Dateien (privat) liegen in getrennten Wurzeln.
 
 ## 5. Audit Log
@@ -90,5 +90,5 @@ Screenshots nur redigiert; Downloads autorisiert.
 ## 8. Secrets & Betrieb
 
 Keine Secrets im Repo (`.env.example` dokumentiert alle Variablen; Seeds lesen Dev-Passwörter aus ENV).
-`APP_ENCRYPTION_KEY`/`SESSION_PEPPER`/`CRON_SECRET` müssen produktiv gesetzt sein (Startup-Check).
+`APP_ENCRYPTION_KEY`/`SESSION_PEPPER` müssen produktiv gesetzt sein (Startup-Check erzwingt das). `CRON_SECRET` ist optional: ohne Wert ist der externe Trigger `/api/cron/run` deaktiviert und es läuft ausschließlich der interne Scheduler.
 Backups/Restore im README. Dependency-Hygiene: gepinnte Versionen, `npm audit` im CI-Abschnitt des README.

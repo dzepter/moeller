@@ -160,6 +160,8 @@ export async function mergeCandidatesAction(_prev: ActionResult, formData: FormD
 }
 
 export async function duplicateHintsAction(candidateId: string) {
-  await requireActionUser();
-  return findDuplicateHints(candidateId);
+  const user = await requireActionUser();
+  // Scope-Prüfung passiert im Service: fremde Candidate-IDs → ForbiddenError,
+  // Treffer bleiben auf den Sichtbarkeitsbereich des Benutzers beschränkt.
+  return findDuplicateHints(user, candidateId);
 }

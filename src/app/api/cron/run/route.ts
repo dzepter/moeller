@@ -6,10 +6,17 @@ import { schedulerJobs } from "@/server/jobs-scheduler";
 export const dynamic = "force-dynamic";
 
 /**
- * Externer Scheduler-Trigger für Plattform-Cron (Vercel Cron, Kubernetes
- * CronJob, systemd-Timer …): POST mit `Authorization: Bearer <CRON_SECRET>`.
- * Führt dieselben idempotenten Jobs aus wie der interne Minuten-Tick –
- * der PostgreSQL Advisory Lock verhindert Doppelläufe.
+ * Externer Scheduler-Trigger für Plattform-Cron (Kubernetes CronJob,
+ * systemd-Timer …): POST mit `Authorization: Bearer <CRON_SECRET>`.
+ *
+ * Verhält sich exakt wie der interne Minuten-Tick: die everyMinutes-Intervalle
+ * der Jobs werden RESPEKTIERT (kein force) – ein häufiger externer Trigger
+ * führt Retention oder Academy-Erinnerungen also nicht öfter aus als
+ * vorgesehen. Damit intervallgebundene Jobs zuverlässig getroffen werden,
+ * muss ein externer Cron MINÜTLICH aufrufen (siehe README, Abschnitt
+ * Scheduler/Cron – empfohlene Strategie ist der interne Tick).
+ * Der transaktionsgebundene PostgreSQL Advisory Lock verhindert Doppelläufe
+ * mit einem parallel aktiven internen Scheduler.
  * Ohne gesetztes CRON_SECRET ist der Endpunkt deaktiviert (404).
  */
 export async function POST(req: Request): Promise<Response> {
@@ -27,6 +34,6 @@ export async function POST(req: Request): Promise<Response> {
   // Jobs explizit registrieren: die Route läuft ggf. in einer eigenen
   // Bundle-Einheit und darf sich nicht auf die Instrumentation verlassen.
   registerJobs(schedulerJobs);
-  const results = await runAllJobs({ force: true });
+  const results = await runAllJobs();
   return Response.json({ ok: true, results });
 }

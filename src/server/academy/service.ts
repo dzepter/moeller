@@ -109,6 +109,10 @@ export async function sendInvitation(user: CurrentUser, assignmentId: string) {
     courseTitle: assignment.courseVersion.course.title,
     link: `${env.baseUrl}/academy/${token}`,
     validDays: validityDays,
+    contact: {
+      hoursLabel: (await getSetting("contact.openingHours")).label,
+      phone: await getSetting("contact.phone"),
+    },
   });
   await sendMail({
     to: assignment.candidate.email,
@@ -188,6 +192,9 @@ export async function resolveInvitation(token: string) {
     },
   });
   if (!invitation || invitation.revokedAt || invitation.expiresAt < new Date()) return null;
+  // Nach Anonymisierung des Kandidaten gewährt auch ein noch nicht abgelaufener
+  // Magic-Link keinen Zugang mehr (Datenschutz: Zugang endet mit der Person).
+  if (invitation.assignment.candidate.anonymizedAt) return null;
 
   const now = new Date();
   await db.$transaction([

@@ -38,18 +38,18 @@ export default async function HomePage() {
   return (
     <>
       {/* ============ 1 · Premium Hero ============ */}
-      <Section className="overflow-x-clip pb-0 md:pb-0 pt-12 md:pt-20" aria-labelledby="hero-h">
+      <Section className="overflow-x-clip pb-0 md:pb-0 pt-8 md:pt-20" aria-labelledby="hero-h">
         <div className="site-container">
-          <div className="grid items-start gap-10 lg:grid-cols-12">
+          <div className="grid items-start gap-8 md:gap-10 lg:grid-cols-12">
             <div className="rise-in lg:col-span-7 lg:pt-6">
               <Eyebrow>Beratungs- &amp; Vertriebsgesellschaft</Eyebrow>
-              <h1 id="hero-h" className="mt-5 font-display text-[2.6rem] leading-[1.05] font-extrabold text-ink md:text-[3.6rem] lg:text-[4.1rem]">
+              <h1 id="hero-h" className="mt-4 font-display text-[2.35rem] leading-[1.06] tracking-[-0.02em] font-extrabold text-ink md:mt-5 md:text-[3.6rem] lg:text-[4.1rem]">
                 {fText(content, "hero", "headline")}
               </h1>
-              <p className="mt-6 max-w-xl text-lg text-ink-soft md:text-xl">
+              <p className="mt-5 max-w-xl text-lg text-ink-soft md:mt-6 md:text-xl">
                 {fText(content, "hero", "subline")}
               </p>
-              <div className="mt-9 flex flex-wrap gap-3.5">
+              <div className="mt-7 flex flex-wrap gap-3.5 md:mt-9">
                 <ButtonLink href={fText(content, "hero", "ctaPrimaryHref") || "/jobs"} size="lg">
                   {fText(content, "hero", "ctaPrimary")}
                   <ArrowIcon />

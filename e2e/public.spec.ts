@@ -1,24 +1,13 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { expectNoA11yViolations } from "./a11y";
 
-/** Öffentliche Kernflüsse + Accessibility (axe, WCAG 2.x A/AA). */
-
-async function expectNoSeriousA11yViolations(page: import("@playwright/test").Page) {
-  // Eintrittsanimationen sofort beenden, damit axe keine Farben mitten im
-  // Opacity-Übergang misst (falsch-positive Kontrastfehler).
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  expect(serious, JSON.stringify(serious.map((v) => ({ id: v.id, nodes: v.nodes.length })), null, 2)).toEqual([]);
-}
+/** Öffentliche Kernflüsse + Accessibility (axe; Details siehe e2e/a11y.ts). */
 
 test.describe("Öffentliche Website", () => {
   test("Startseite: rendert, ist barrierearm, führt zu Jobs", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Menschen");
-    await expectNoSeriousA11yViolations(page);
+    await expectNoA11yViolations(page);
 
     // Jobfinder: Region wählen → Jobliste
     await page.getByRole("button", { name: "NRW", exact: true }).click();
@@ -29,19 +18,20 @@ test.describe("Öffentliche Website", () => {
 
   test("Jobliste + Filter + Jobdetail sind barrierearm", async ({ page }) => {
     await page.goto("/jobs");
-    await expectNoSeriousA11yViolations(page);
+    await expectNoA11yViolations(page);
     await page.getByRole("link", { name: /Promotor \(m\/w\/d\) Lebensmitteleinzelhandel/ }).click();
     await page.waitForURL("**/jobs/promotor-leh-nrw");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Promotor");
     // JobPosting-JSON-LD vorhanden
     const jsonLd = await page.locator('script[type="application/ld+json"]').first().textContent();
     expect(jsonLd).toContain('"JobPosting"');
-    await expectNoSeriousA11yViolations(page);
+    await expectNoA11yViolations(page);
   });
 
-  test("Bewerbung in 2 Minuten: absenden → Danke-Seite → Eingang im System", async ({ page }) => {
+  test("Bewerbung in 2 Minuten: absenden → Danke-Seite → UTM landet an der Bewerbung", async ({ page }) => {
     const unique = Date.now().toString(36);
-    await page.goto("/jobs/promotor-elektrofachmarkt-hessen");
+    // UTM-Parameter auf der Einstiegs-URL – müssen bis zur gespeicherten Application durchgereicht werden
+    await page.goto(`/jobs/promotor-elektrofachmarkt-hessen?utm_source=e2e-quelle&utm_medium=e2e-medium&utm_campaign=kampagne-${unique}`);
     await page.fill("#f-firstName", "E2E");
     await page.fill("#f-lastName", `Bewerber-${unique}`);
     await page.fill("#f-city", "Frankfurt");
@@ -56,6 +46,18 @@ test.describe("Öffentliche Website", () => {
     await page.getByRole("button", { name: "Bewerbung absenden" }).click();
     await page.waitForURL("**/danke");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Danke");
+
+    // UTM-Kette vollständig: URL → Formular → gespeicherte Application
+    const { PrismaClient } = await import("@prisma/client");
+    const db = new PrismaClient();
+    const application = await db.application.findFirst({
+      where: { candidate: { email: `e2e-${unique}@example.com` } },
+      orderBy: { createdAt: "desc" },
+    });
+    await db.$disconnect();
+    expect(application?.utmSource).toBe("e2e-quelle");
+    expect(application?.utmMedium).toBe("e2e-medium");
+    expect(application?.utmCampaign).toBe(`kampagne-${unique}`);
   });
 
   test("Formularvalidierung: Fehler sind zugänglich (role=alert)", async ({ page }) => {
@@ -69,7 +71,7 @@ test.describe("Öffentliche Website", () => {
 
   test("Empfehlungslink erstellen (Variante A)", async ({ page }) => {
     await page.goto("/empfehlen");
-    await expectNoSeriousA11yViolations(page);
+    await expectNoA11yViolations(page);
     await page.fill("#r-referrerFirstName", "Paula");
     await page.fill("#r-referrerLastName", "Promotorin");
     await page.fill("#r-referrerContact", "paula@example.com");

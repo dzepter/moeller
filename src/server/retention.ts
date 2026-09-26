@@ -44,19 +44,22 @@ export async function retentionPreview() {
   return { rejected, completed, chats, referrals, settings: { rejectedDays, completedDays, chatDays, referralDays } };
 }
 
+/**
+ * Phase 1 (reine DB-Transaktion): Bewerbung anonymisieren und zugehörige
+ * Dateien nur MARKIEREN (pendingDeletionAt). DB und Dateisystem/S3 können
+ * keine gemeinsame Transaktion bilden – deshalb wird hier nichts physisch
+ * gelöscht: schlägt die Transaktion fehl, ist auch keine Datei weg.
+ * Markierte Dateien gelten überall als gelöscht (Auslieferung gesperrt) und
+ * werden in Phase 2 (deletePendingFiles) physisch entfernt – retryfähig.
+ */
 async function anonymizeApplication(applicationId: string): Promise<void> {
   await db.$transaction(async (tx) => {
     const app = await tx.application.findUniqueOrThrow({
       where: { id: applicationId },
       include: { candidate: { include: { applications: true, files: true } } },
     });
-    // Datei(en) der Bewerbung löschen
     if (app.cvFileId) {
-      const file = await tx.privateFile.findUnique({ where: { id: app.cvFileId } });
-      if (file) {
-        await storage.delete("private", file.fileName);
-        await tx.privateFile.delete({ where: { id: file.id } });
-      }
+      await tx.privateFile.update({ where: { id: app.cvFileId }, data: { pendingDeletionAt: new Date() } });
     }
     await tx.application.update({
       where: { id: app.id },
@@ -70,10 +73,10 @@ async function anonymizeApplication(applicationId: string): Promise<void> {
       where: { candidateId: app.candidateId, anonymizedAt: null, id: { not: app.id } },
     });
     if (remaining === 0) {
-      for (const f of app.candidate.files) {
-        await storage.delete("private", f.fileName);
-      }
-      await tx.privateFile.deleteMany({ where: { candidateId: app.candidateId } });
+      await tx.privateFile.updateMany({
+        where: { candidateId: app.candidateId },
+        data: { pendingDeletionAt: new Date() },
+      });
       await tx.candidateNote.deleteMany({ where: { candidateId: app.candidateId } });
       await tx.candidate.update({
         where: { id: app.candidateId },
@@ -92,12 +95,45 @@ async function anonymizeApplication(applicationId: string): Promise<void> {
   });
 }
 
+/**
+ * Phase 2: zur Löschung markierte Dateien physisch entfernen. Erst wenn das
+ * Storage-Delete gelungen ist, verschwindet die DB-Zeile (Application.cvFileId
+ * wird per onDelete: SetNull automatisch geleert). Schlägt das Löschen fehl,
+ * bleibt die Zeile markiert und der nächste Lauf versucht es erneut – es kann
+ * also nie ein dauerhafter Verweis auf eine verschwundene Datei entstehen.
+ */
+export async function deletePendingFiles(): Promise<{ deleted: number; failed: number }> {
+  const pending = await db.privateFile.findMany({
+    where: { pendingDeletionAt: { not: null } },
+    take: 500,
+  });
+  let deleted = 0;
+  let failed = 0;
+  for (const file of pending) {
+    try {
+      await storage.delete("private", file.fileName);
+      await db.privateFile.delete({ where: { id: file.id } });
+      deleted++;
+    } catch (err) {
+      failed++;
+      console.error(
+        `[retention] Datei ${file.id} konnte nicht gelöscht werden – bleibt markiert und wird beim nächsten Lauf erneut versucht.`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return { deleted, failed };
+}
+
 export async function runRetention(actorId?: string): Promise<Record<string, number>> {
   const preview = await retentionPreview();
   const { rejectedDays, completedDays, chatDays, referralDays } = preview.settings;
   let applications = 0;
   let chats = 0;
   let referrals = 0;
+
+  // Zuerst liegengebliebene Datei-Löschungen aus früheren Läufen nachholen
+  const retriedFiles = await deletePendingFiles();
 
   const dueApps = await db.application.findMany({
     where: {
@@ -151,17 +187,22 @@ export async function runRetention(actorId?: string): Promise<Record<string, num
   });
   referrals = dueReferrals.count;
 
+  // Frisch markierte Dateien physisch löschen (Fehler bleiben markiert → Retry)
+  const files = await deletePendingFiles();
+
   // Abgelaufene Rate-Limit-Buckets und alte E-Mail-Logs bereinigen
   const rlHours = await getSetting("retention.rateLimitHours");
   const rl = await db.rateLimitBucket.deleteMany({ where: { updatedAt: { lt: cutoff(rlHours / 24) } } });
   const mails = await db.emailLog.deleteMany({ where: { createdAt: { lt: cutoff(365) } } });
 
-  if (applications + chats + referrals > 0) {
+  const filesDeleted = retriedFiles.deleted + files.deleted;
+  const filesFailed = files.failed;
+  if (applications + chats + referrals + filesDeleted > 0 || filesFailed > 0) {
     await audit({
       action: "retention.executed",
       actorId,
       actorType: actorId ? "USER" : "SYSTEM",
-      meta: { applications, chats, referrals, rateLimitBuckets: rl.count, emailLogs: mails.count },
+      meta: { applications, chats, referrals, filesDeleted, filesFailed, rateLimitBuckets: rl.count, emailLogs: mails.count },
     });
   }
   return { applications, chats, referrals };

@@ -13,7 +13,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { id } = await ctx.params;
   const file = await db.privateFile.findUnique({ where: { id } });
-  if (!file) notFound();
+  // Zur Löschung markierte Dateien (Retention Phase 1) gelten als gelöscht,
+  // auch wenn die physische Entfernung noch aussteht.
+  if (!file || file.pendingDeletionAt) notFound();
 
   if (!hasPermission(user, "candidates.read.all")) {
     if (!file.candidateId) return new Response("Kein Zugriff", { status: 403 });
@@ -22,7 +24,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!visible) return new Response("Kein Zugriff", { status: 403 });
   }
 
-  const data = await storage.get("private", file.fileName);
+  let data: Buffer;
+  try {
+    data = await storage.get("private", file.fileName);
+  } catch (err) {
+    console.warn(`[files] Datei fehlt im Storage: ${file.id} → ${file.fileName}`, err instanceof Error ? err.message : err);
+    notFound();
+  }
   return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": file.mime,

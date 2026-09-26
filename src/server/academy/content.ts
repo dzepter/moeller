@@ -174,6 +174,32 @@ export async function saveLesson(
   if (!hasPermission(user, "academy.editContent")) throw new ForbiddenError();
   await assertDraftLesson(lessonId);
   const blocks = textToBlocks(data.contentText);
+
+  // Referenzierte Screenshots validieren und der Kursversion zuordnen:
+  // Teilnehmer dürfen INTERNAL-Medien nur sehen, wenn sie über TrainingAsset
+  // mit ihrer Kursversion verknüpft sind – neu eingefügte Bilder müssen daher
+  // hier registriert werden (und tote IDs sollen gar nicht erst gespeichert werden).
+  const mediaIds = [...new Set(blocks.filter((b) => b.type === "screenshot").map((b) => String(b.mediaId)))];
+  if (mediaIds.length) {
+    const lesson = await db.trainingLesson.findUniqueOrThrow({
+      where: { id: lessonId },
+      include: { module: { select: { courseVersionId: true } } },
+    });
+    const found = await db.mediaAsset.findMany({ where: { id: { in: mediaIds } }, select: { id: true } });
+    const foundIds = new Set(found.map((m) => m.id));
+    const missing = mediaIds.filter((m) => !foundIds.has(m));
+    if (missing.length) throw new Error(`Screenshot-ID nicht gefunden: ${missing.join(", ")}`);
+    for (const mediaAssetId of mediaIds) {
+      await db.trainingAsset.upsert({
+        where: {
+          courseVersionId_mediaAssetId: { courseVersionId: lesson.module.courseVersionId, mediaAssetId },
+        },
+        update: {},
+        create: { courseVersionId: lesson.module.courseVersionId, mediaAssetId },
+      });
+    }
+  }
+
   await db.trainingLesson.update({
     where: { id: lessonId },
     data: { title: data.title, content: { blocks } as Prisma.InputJsonValue },

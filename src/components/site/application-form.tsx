@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useMemo } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { applyAction, type ApplyState } from "@/app/actions/apply";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { recallUtm, type UtmParams } from "@/lib/utm";
 
 const BUNDESLAENDER = [
   { value: "NRW", label: "Nordrhein-Westfalen" },
@@ -31,6 +32,15 @@ export function ApplicationForm({ jobSlug, jobBundesland, askOwnCar, cvUploadEna
   const startedAt = useMemo(() => Date.now().toString(), []);
   const errors = state?.errors ?? {};
 
+  // Kampagnen-Parameter (utm_*) der Einstiegs-URL: erst im Effekt gelesen
+  // (SSR-sicher), als Hidden-Fields mitgesendet, gespeichert nur an der Bewerbung.
+  const [utm, setUtm] = useState<UtmParams>({});
+  useEffect(() => {
+    // deferred, um synchrones setState im Effect zu vermeiden (React-Compiler-Regel)
+    const t = setTimeout(() => setUtm(recallUtm(window.location.search)), 0);
+    return () => clearTimeout(t);
+  }, []);
+
   // Ereignis „Bewerbung gestartet" (cookieloser Beacon; serverseitig no-op, wenn Analytics aus)
   useEffect(() => {
     void fetch("/api/t", {
@@ -44,6 +54,9 @@ export function ApplicationForm({ jobSlug, jobBundesland, askOwnCar, cvUploadEna
     <form action={formAction} noValidate className="space-y-5">
       {jobSlug ? <input type="hidden" name="jobSlug" value={jobSlug} /> : null}
       <input type="hidden" name="startedAt" value={startedAt} />
+      {utm.utmSource ? <input type="hidden" name="utmSource" value={utm.utmSource} /> : null}
+      {utm.utmMedium ? <input type="hidden" name="utmMedium" value={utm.utmMedium} /> : null}
+      {utm.utmCampaign ? <input type="hidden" name="utmCampaign" value={utm.utmCampaign} /> : null}
       {/* Honeypot */}
       <div className="absolute -left-[9999px] top-auto" aria-hidden="true">
         <label>

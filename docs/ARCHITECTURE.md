@@ -96,7 +96,7 @@ Besonderheiten:
 
 ## 8. E-Mail
 
-Templates (Neue Bewerbung intern · Eingangsbestätigung · Neue Empfehlung intern · Referral-Einladung · Neuer Chat · Academy-Einladung/-Erinnerung) liegen als typisierte Funktionen in `src/lib/email/templates/`; Betreff/Textbausteine über Settings anpassbar. Interne Mails enthalten Name/Stelle/Bundesland + geschützten Link, keine vollständigen Bewerberdaten. Versand mit Retry über `EmailLog` (Status `PENDING/SENT/FAILED`).
+Templates (Neue Bewerbung intern · Eingangsbestätigung · Neue Empfehlung intern · Referral-Einladung · Neuer Chat · Academy-Einladung/-Erinnerung) liegen als typisierte Funktionen in `src/lib/email/templates.ts` – bewusst im Code (Typsicherheit, konsistente Tonalität), nicht im Admin editierbar. Kontaktangaben darin (Erreichbarkeitszeiten, Telefonnummer) kommen aus den zentralen Settings; Empfängerlisten sind unter Admin → Einstellungen konfigurierbar. Interne Mails enthalten Name/Stelle/Bundesland + geschützten Link, keine vollständigen Bewerberdaten. Versand mit Retry über `EmailLog` (Status `PENDING/SENT/FAILED`).
 
 ## 9. SEO & Performance
 
