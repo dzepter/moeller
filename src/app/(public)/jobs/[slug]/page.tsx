@@ -11,6 +11,7 @@ import { ApplicationForm } from "@/components/site/application-form";
 import { ButtonLink, ArrowIcon } from "@/components/ui/button";
 import { ShareRow } from "@/components/site/share-row";
 import { RichText } from "@/components/site/richtext";
+import { track } from "@/lib/analytics";
 
 type Params = Promise<{ slug: string }>;
 
@@ -43,6 +44,7 @@ export default async function JobDetailPage({ params }: { params: Params }) {
     notFound();
   }
 
+  await track("job_angesehen");
   const [consentText, address] = await Promise.all([
     getSetting("applications.consentText"),
     getSetting("contact.address"),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo } from "react";
+import { useActionState, useEffect, useMemo } from "react";
 import { applyAction, type ApplyState } from "@/app/actions/apply";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,15 @@ export function ApplicationForm({ jobSlug, jobBundesland, askOwnCar, cvUploadEna
   // eslint-disable-next-line react-hooks/purity
   const startedAt = useMemo(() => Date.now().toString(), []);
   const errors = state?.errors ?? {};
+
+  // Ereignis „Bewerbung gestartet" (cookieloser Beacon; serverseitig no-op, wenn Analytics aus)
+  useEffect(() => {
+    void fetch("/api/t", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ e: "bewerbung_gestartet" }),
+    }).catch(() => undefined);
+  }, []);
 
   return (
     <form action={formAction} noValidate className="space-y-5">

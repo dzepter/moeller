@@ -12,7 +12,7 @@
   --color-brand-wash: #e9f0fa;
   --color-ink: #16212e;
   --color-ink-soft: #3d4c5e;
-  --color-ink-mute: #64748b;
+  --color-ink-mute: #55657a; /* ≥ 4.5:1 auf Weiß und Off-White (WCAG AA) */
   --color-paper: #ffffff;
   --color-paper-warm: #f5f7fa;
   --color-line: #d8dee6;

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { hashIp } from "@/lib/crypto";
+import { env } from "@/lib/env";
 
 /**
  * DB-basiertes Fixed-Window-Rate-Limit mit optionaler Sperrzeit.
@@ -11,6 +12,9 @@ export async function rateLimit(params: {
   windowSeconds: number;
   blockSeconds?: number;
 }): Promise<{ ok: boolean; remaining: number }> {
+  // Test-Schalter (nie in Produktion aktiv, siehe env.rateLimitDisabled)
+  if (env.rateLimitDisabled) return { ok: true, remaining: params.limit };
+
   const now = new Date();
   const windowStart = new Date(now.getTime() - params.windowSeconds * 1000);
 

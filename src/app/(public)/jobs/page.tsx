@@ -7,6 +7,7 @@ import { Section, Eyebrow } from "@/components/site/section";
 import { ButtonLink, Button, ArrowIcon } from "@/components/ui/button";
 import { BUNDESLAND_LABEL } from "@/lib/utils";
 import type { Beschaeftigungsart, Bundesland, Einsatzbereich } from "@prisma/client";
+import { track } from "@/lib/analytics";
 
 export const metadata: Metadata = {
   title: "Jobs & offene Stellen",
@@ -36,6 +37,7 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
   ]);
 
   const hasFilter = Boolean(bundesland || einsatzbereich || employmentType || q || ort);
+  if (hasFilter) await track("jobfilter_genutzt");
 
   return (
     <>

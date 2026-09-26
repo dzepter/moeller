@@ -5,6 +5,7 @@ import { sendMail } from "@/lib/email";
 import { tplNeuerChatIntern } from "@/lib/email/templates";
 import { getSetting, isWithinBusinessHours } from "@/lib/settings";
 import { audit } from "@/lib/audit";
+import { track } from "@/lib/analytics";
 
 /**
  * Live-Chat: Besucher-Seite. Kein Bot – Nachrichten landen beim Innendienst.
@@ -48,6 +49,7 @@ export async function startOrPostMessage(params: {
       },
     });
     await audit({ action: "chat.started", actorType: "VISITOR", entityType: "ChatConversation", entityId: conversation.id });
+    await track("chat_gestartet");
   } else {
     // Kontaktdaten ergänzen, falls nachgereicht; erledigte Unterhaltung wieder öffnen
     await db.chatConversation.update({

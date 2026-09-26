@@ -964,6 +964,15 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+// Datenschutzfreundliche Ereigniszählung (nur Zähler pro Tag, keine PII)
+model AnalyticsEvent {
+  name  String
+  day   DateTime @db.Date
+  count Int      @default(0)
+
+  @@id([name, day])
+}
+
 // Persistenter Rate-Limit-Speicher (IP nur als Hash, TTL via Scheduler bereinigt)
 model RateLimitBucket {
   key           String    @id // z. B. login:ipHash oder login:user:xyz

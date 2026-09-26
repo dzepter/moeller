@@ -27,27 +27,33 @@ export async function runAllJobs(opts?: { force?: boolean }): Promise<Record<str
   const results: Record<string, unknown> = {};
   const minute = Math.floor(Date.now() / 60_000);
 
-  const lock = await db.$queryRaw<Array<{ locked: boolean }>>`SELECT pg_try_advisory_lock(${LOCK_KEY}) AS locked`;
-  if (!lock[0]?.locked) return { skipped: "lock" };
+  // Transaktionsgebundener Advisory Lock: Session-Locks über den Connection-
+  // Pool wären fehleranfällig (Lock und Unlock können auf unterschiedlichen
+  // Verbindungen landen). Der xact-Lock wird beim Commit automatisch frei.
+  return await db.$transaction(
+    async (tx) => {
+      const lock = await tx.$queryRaw<Array<{ locked: boolean }>>`SELECT pg_try_advisory_xact_lock(${LOCK_KEY}) AS locked`;
+      if (!lock[0]?.locked) return { skipped: "lock" };
 
-  try {
-    for (const job of registry) {
-      if (!opts?.force && minute % job.everyMinutes !== 0) continue;
-      try {
-        const res = await job.run();
-        results[job.name] = res ?? "ok";
-        if (res && Object.values(res).some((v) => v > 0)) {
-          await audit({ action: "system.scheduler.run", actorType: "SYSTEM", meta: { job: job.name, ...res } });
+      for (const job of registry) {
+        if (!opts?.force && minute % job.everyMinutes !== 0) continue;
+        try {
+          const res = await job.run();
+          results[job.name] = res ?? "ok";
+          if (res && Object.values(res).some((v) => v > 0)) {
+            await audit({ action: "system.scheduler.run", actorType: "SYSTEM", meta: { job: job.name, ...res } });
+          }
+        } catch (err) {
+          results[job.name] = `Fehler: ${err instanceof Error ? err.message : "unbekannt"}`;
+          console.error(`[scheduler] Job ${job.name} fehlgeschlagen`, err);
         }
-      } catch (err) {
-        results[job.name] = `Fehler: ${err instanceof Error ? err.message : "unbekannt"}`;
-        console.error(`[scheduler] Job ${job.name} fehlgeschlagen`, err);
       }
-    }
-  } finally {
-    await db.$queryRaw`SELECT pg_advisory_unlock(${LOCK_KEY})`;
-  }
-  return results;
+      return results;
+    },
+    // Jobs laufen über den globalen Client außerhalb dieser Transaktion;
+    // sie hält nur den Lock. Timeout großzügig für langsame Läufe.
+    { timeout: 10 * 60_000, maxWait: 10_000 },
+  );
 }
 
 let started = false;

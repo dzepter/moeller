@@ -66,7 +66,8 @@ export async function startOnboarding(user: CurrentUser, candidateId: string, co
   }
 
   await sendInvitation(user, assignment.id);
-  return assignment;
+  // frischen Stand zurückgeben (sendInvitation setzt Status/invitedAt)
+  return db.trainingAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
 }
 
 /** Einladung (neu) versenden – alter Link wird widerrufen. */

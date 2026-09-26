@@ -44,9 +44,11 @@ class InMemoryHub implements RealtimeHub {
   }
 }
 
+// Immer über globalThis verankern – auch in Produktion: Next.js bündelt
+// Server Actions und Route Handler getrennt, jede Bundle-Einheit bekäme sonst
+// ihre eigene Hub-Instanz und SSE-Abonnenten würden Publishes nie sehen.
 const globalForHub = globalThis as unknown as { realtimeHub?: RealtimeHub };
-export const realtimeHub: RealtimeHub = globalForHub.realtimeHub ?? new InMemoryHub();
-if (process.env.NODE_ENV !== "production") globalForHub.realtimeHub = realtimeHub;
+export const realtimeHub: RealtimeHub = (globalForHub.realtimeHub ??= new InMemoryHub());
 
 /** SSE-Response für einen Kanal bauen (Route Handler). */
 export function sseResponse(channel: string, opts?: { heartbeatMs?: number; signal?: AbortSignal }): Response {

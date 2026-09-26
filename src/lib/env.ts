@@ -32,6 +32,13 @@ export const env = {
   get schedulerEnabled() {
     return (process.env.SCHEDULER_ENABLED ?? "true") === "true";
   },
+  /**
+   * NUR für automatisierte Tests (E2E): deaktiviert Rate Limits.
+   * Produktiv NIEMALS setzen – der Start protokolliert dann eine laute Warnung.
+   */
+  get rateLimitDisabled() {
+    return process.env.RATE_LIMIT_DISABLED === "true";
+  },
   email: {
     get provider() {
       return process.env.EMAIL_PROVIDER === "smtp" ? ("smtp" as const) : ("log" as const);
@@ -71,6 +78,11 @@ export const env = {
 
 /** Wirft in Produktion, wenn unsichere Dev-Defaults aktiv sind. */
 export function assertProductionSecrets(): void {
+  if (env.rateLimitDisabled) {
+    console.warn(
+      "⚠️  RATE_LIMIT_DISABLED=true – Rate Limits sind AUS. Nur für automatisierte Tests zulässig, niemals im Produktivbetrieb!",
+    );
+  }
   if (!env.isProd) return;
   if (env.encryptionKey.startsWith("dev_only") || env.encryptionKey.length < 64) {
     throw new Error("APP_ENCRYPTION_KEY muss produktiv gesetzt sein (64 Hex-Zeichen).");

@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import type { ApplicationInput } from "@/lib/validation";
 import type { CandidateSource } from "@prisma/client";
 import { randomFileName, storage, validateUpload, detectedMime, malwareScanner } from "@/lib/storage";
+import { track } from "@/lib/analytics";
 
 /**
  * Bewerbung entgegennehmen: Kandidat finden/anlegen (Duplikat-schonend),
@@ -160,6 +161,7 @@ export async function submitApplication(
       relatedId: result.application.id,
     });
   }
+  await track("bewerbung_abgeschickt");
   const confirm = tplEingangsbestaetigung({ firstName: input.firstName, stelle: job?.title ?? null });
   await sendMail({
     to: input.email,

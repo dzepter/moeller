@@ -5,6 +5,7 @@ import { sendMail } from "@/lib/email";
 import { tplNeueEmpfehlungIntern } from "@/lib/email/templates";
 import { audit } from "@/lib/audit";
 import { normalizeEmail, normalizePhone } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 import type { Bundesland } from "@prisma/client";
 
 /**
@@ -41,6 +42,7 @@ export async function createReferralLink(input: {
     data: { referralId: referral.id, toStatus: "EMPFEHLUNG_NEU", comment: "Empfehlungslink erzeugt" },
   });
   await audit({ action: "referral.created", actorType: "VISITOR", entityType: "Referral", entityId: referral.id, meta: { type: "LINK" } });
+  await track("empfehlung_gestartet");
   return referral;
 }
 
@@ -80,6 +82,7 @@ export async function completeReferralSelf(input: {
     data: { referralId: referral.id, fromStatus: referral.status, toStatus: "KONTAKT_AUSSTEHEND", comment: "Empfohlene Person hat sich selbst eingetragen" },
   });
   await notifyInternal(updated.id);
+  await track("empfehlung_abgeschlossen");
   return updated;
 }
 
@@ -130,6 +133,7 @@ export async function createDirectReferral(input: {
   });
   await audit({ action: "referral.created", actorType: "VISITOR", entityType: "Referral", entityId: referral.id, meta: { type: "DIREKT" } });
   await notifyInternal(referral.id);
+  await track("empfehlung_abgeschlossen");
   return referral;
 }
 

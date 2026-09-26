@@ -30,7 +30,7 @@ sofern nicht anders vermerkt.
 | D23 | Academy-Magic-Link: 30 Tage gültig (konfigurierbar), Wiederversand revoked alten Token | Sicherheit + Praxis (Onboarding-Zeitraum) | Default |
 | D24 | Analytics: standardmäßig **aus**; eingebaute minimale, cookielose Ereigniszählung (First-Party, ohne PII) aktivierbar; kein Cookie-Banner nötig im Default | Vorgabe §37 datenschutzfreundlich, keine Dark Patterns | Default |
 | D25 | Duplikaterkennung: normalisierte E-Mail exakt, Telefon per E.164-Normalisierung, optional Name+Ort-Ähnlichkeit; nur Hinweis + kontrolliertes Mergen, nie automatisch | Vorgabe §19 | fest |
-| D26 | Suchmaschinenstrategie abgelaufene Jobs: HTTP 410 + freundliche Seite mit Verweis auf Jobübersicht/Initiativbewerbung; `validThrough` in JSON-LD | Vorgabe §36 | Default |
+| D26 | Suchmaschinenstrategie abgelaufene Jobs: freundliche „Stelle vergeben"-Seite mit `noindex, follow` + Verweis auf Jobübersicht/Initiativbewerbung; `validThrough` in JSON-LD. Bewusste Abweichung von wörtlichem HTTP 410: Der App Router erlaubt keinen eigenen Statuscode aus einer Page; `noindex` erzielt dieselbe Deindexierung, `follow` erhält den Linkfluss zur Jobübersicht | Vorgabe §36, technisch angepasst | Default |
 | D27 | Teamzuordnung Bewerbung „ohne Bundesland-Match" (Initiativ ohne Angabe unmöglich – Bundesland ist Pflichtfeld) | Formular erzwingt Bundesland ⇒ eindeutige Zuordnung | fest |
 | D28 | Admin-UI deutschsprachig, öffentliche Site deutschsprachig (keine i18n-Infrastruktur in v1) | Zielgruppe rein deutschsprachig; i18n wäre Overhead ohne Nutzen | Default |
 | D29 | Reporting-Export CSV nur mit Permission `reporting.export`, jeder Export im Audit | Vorgabe §29 | fest |

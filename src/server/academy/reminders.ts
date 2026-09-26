@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { generateToken, hashToken } from "@/lib/crypto";
 import { getSetting } from "@/lib/settings";
 import { sendMail } from "@/lib/email";
 import { tplAcademyErinnerung } from "@/lib/email/templates";
@@ -26,7 +27,10 @@ export async function runAcademyReminders(now = new Date()): Promise<{ sent: num
     include: {
       candidate: true,
       courseVersion: { include: { course: true } },
-      invitations: { where: { revokedAt: null, expiresAt: { gt: now } }, orderBy: { createdAt: "desc" }, take: 1 },
+      // Nicht widerrufene Einladungen zählen – auch abgelaufene: gerade dann
+      // ist eine Erinnerung mit frischem Link sinnvoll. Hat der Innendienst
+      // alle Einladungen widerrufen, ist der Zugang bewusst entzogen → keine Erinnerung.
+      invitations: { where: { revokedAt: null }, orderBy: { createdAt: "desc" }, take: 1 },
       reminderLogs: true,
     },
     take: 200,
@@ -45,15 +49,26 @@ export async function runAcademyReminders(now = new Date()): Promise<{ sent: num
     if (!kind) continue;
     if (a.reminderLogs.some((r) => r.kind === kind)) continue;
 
-    // Link kann nur mit Originaltoken gebaut werden – Erinnerung verweist auf die Einstiegsseite,
-    // der Innendienst kann bei Bedarf neu einladen. Deshalb: nur wenn E-Mail vorhanden.
     const email = a.candidate.email;
     if (!email || email.endsWith("@invalid.local")) continue;
+
+    // Frischer Magic-Link für die Erinnerung (Token wird nur gehasht gespeichert).
+    // Die bestehende Einladung bleibt gültig – wer die alte E-Mail nutzt, kommt weiter rein.
+    const validityDays = await getSetting("academy.invitationValidityDays");
+    const token = generateToken();
+    await db.trainingInvitation.create({
+      data: {
+        assignmentId: a.id,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(now.getTime() + validityDays * 86_400_000),
+        sentAt: new Date(),
+      },
+    });
 
     const mail = tplAcademyErinnerung({
       firstName: a.candidate.firstName,
       courseTitle: a.courseVersion.course.title,
-      link: `${env.baseUrl}/academy`,
+      link: `${env.baseUrl}/academy/${token}`,
     });
     await sendMail({
       to: email,
