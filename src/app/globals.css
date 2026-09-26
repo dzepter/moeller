@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* ==========================================================
+   Möller GmbH – Design Tokens (siehe docs/DESIGN_SYSTEM.md)
+   Farben werden später final abgestimmt → zentrale Variablen.
+   ========================================================== */
+
+@theme {
+  /* Farben */
+  --color-brand: #2569c3;
+  --color-brand-deep: #1d4e8f;
+  --color-brand-wash: #e9f0fa;
+  --color-ink: #16212e;
+  --color-ink-soft: #3d4c5e;
+  --color-ink-mute: #55657a; /* ≥ 4.5:1 auf Weiß und Off-White (WCAG AA) */
+  --color-paper: #ffffff;
+  --color-paper-warm: #f5f7fa;
+  --color-line: #d8dee6;
+  --color-line-soft: #e7ecf1;
+  --color-accent: #e8a33d;
+  --color-positive: #2e7d4f;
+  --color-positive-wash: #e8f3ec;
+  --color-danger: #b4382f;
+  --color-danger-wash: #f9ecea;
+  --color-warn-wash: #fdf3e3;
+
+  /* Typografie */
+  --font-display: "Archivo Variable", "Archivo", system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+
+  /* Layout */
+  --container-site: 75rem; /* 1200px */
+
+  /* Motion */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- Basis ---------- */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink-soft);
+  background: var(--color-paper);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  font-weight: 750;
+  text-wrap: balance;
+}
+
+::selection {
+  background: var(--color-brand);
+  color: #fff;
+}
+
+/* Sichtbare, konsistente Fokuszustände (WCAG) */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Wiederkehrende Muster ---------- */
+
+/* Inhaltscontainer */
+.site-container {
+  width: 100%;
+  max-width: var(--container-site);
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 48rem) {
+  .site-container {
+    padding-inline: 2rem;
+  }
+}
+
+/* Eyebrow/Kicker mit Markendetail (schräg angeschnittener Balken) */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+.eyebrow::before {
+  content: "";
+  width: 1.375rem;
+  height: 0.5rem;
+  background: var(--color-brand);
+  clip-path: polygon(0 100%, 18% 0, 100% 0, 82% 100%);
+}
+.eyebrow--light {
+  color: #b7cdec;
+}
+.eyebrow--light::before {
+  background: var(--color-accent);
+}
+
+/* Schräge Sektionskante – Markenmotiv, sparsam einsetzen */
+.slant-b {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - clamp(1.25rem, 3.5vw, 3rem)), 0 100%);
+}
+.slant-t {
+  clip-path: polygon(0 clamp(1.25rem, 3.5vw, 3rem), 100% 0, 100% 100%, 0 100%);
+}
+.slant-img {
+  clip-path: polygon(0 0, 100% clamp(0.75rem, 2vw, 1.5rem), 100% 100%, 0 calc(100% - clamp(0.75rem, 2vw, 1.5rem)));
+}
+
+/* Hairline-Trenner */
+.hairline {
+  border-top: 1px solid var(--color-line);
+}
+
+/* Nummerierte redaktionelle Blöcke */
+.block-number {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--color-brand);
+  letter-spacing: 0.04em;
+}
+
+/* Skip-Link */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--color-ink);
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+}
+.skip-link:focus-visible {
+  left: 0.75rem;
+  top: 0.75rem;
+}
+
+/* Sanfte Eintrittsanimation (nur einmalig, reduced-motion-sicher) */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise-in {
+  animation: rise-in 0.7s var(--ease-out-soft) both;
+}
+.rise-in-late {
+  animation: rise-in 0.7s var(--ease-out-soft) 0.15s both;
+}
+
+/* Link-Unterstreichung im Fließtext */
+.prose-link {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  transition: color 150ms var(--ease-out-soft);
+}
+.prose-link:hover,
+.prose-link:active {
+  color: var(--color-brand-deep);
+  text-decoration-thickness: 2px;
+}

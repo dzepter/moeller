@@ -17,6 +17,15 @@ Stand: 2026-09-26
   pro Konto + IP-Hash, Magic-Link-Prüfung 20/15min, öffentliche Formulare 5/10min pro IP-Hash + Honeypot
   + Zeitfalle. IPs werden dafür nur als **gesalzener Hash mit 24h-TTL** gespeichert.
 
+
+**Betriebssperre (First-Login/MFA-Pflicht):** `mustChangePassword` und die
+Admin-Pflicht-MFA werden zentral in `getCurrentUser()`/`assertPermission()`
+durchgesetzt (fail closed). Server Actions und geschützte Route Handler sind
+damit automatisch gesperrt, bis der Zustand aufgelöst ist; nur die
+Entsperr-Flows (Passwort ändern, MFA-Setup, Logout) laufen über
+`getSessionUser()`. Getestet an echten Action-/API-Grenzen
+(`tests/permissions/operational-lock.test.ts`, E2E inkl. API-Aufruf).
+
 ## 2. Autorisierung
 
 - **RBAC** aus DB (Role → Permission), Rollen nicht hart verdrahtet; Seeds: Administrator, Innendienst,
@@ -51,7 +60,7 @@ Zentral in `next.config.ts`/Middleware:
 - Uploads (Lebenslauf, Medien): Größenlimit (Default 10 MB), Extension- **und** Magic-Byte-Prüfung
   (PDF/JPG/PNG/WebP), Dateinamen randomisiert, Speicherung **außerhalb** `public/`.
   Private Dateien nur über autorisierte Streaming-Route mit Berechtigungsprüfung; optionaler
-  `MalwareScanner`-Adapter (No-op-Default, ClamAV-Anbindung vorbereitet).
+  `MalwareScanner`-Adapter: Default `MALWARE_SCANNER=none` ist ausdrücklich KEIN Schutz (Uploads werden nicht geprüft; der Go-Live-Check warnt). Mit `MALWARE_SCANNER=clamav` läuft jeder Upload über clamd (INSTREAM) und gilt FAIL-CLOSED: ist der Scanner nicht erreichbar, wird der Upload abgelehnt – niemals stillschweigend als geprüft behandelt.
 - CMS-Medien (öffentlich) und Bewerber-/Academy-Dateien (privat) liegen in getrennten Wurzeln.
 
 ## 5. Audit Log
@@ -90,5 +99,5 @@ Screenshots nur redigiert; Downloads autorisiert.
 ## 8. Secrets & Betrieb
 
 Keine Secrets im Repo (`.env.example` dokumentiert alle Variablen; Seeds lesen Dev-Passwörter aus ENV).
-`APP_ENCRYPTION_KEY`/`SESSION_PEPPER`/`CRON_SECRET` müssen produktiv gesetzt sein (Startup-Check).
+`APP_ENCRYPTION_KEY`/`SESSION_PEPPER` müssen produktiv gesetzt sein (Startup-Check erzwingt das). `CRON_SECRET` ist optional: ohne Wert ist der externe Trigger `/api/cron/run` deaktiviert und es läuft ausschließlich der interne Scheduler.
 Backups/Restore im README. Dependency-Hygiene: gepinnte Versionen, `npm audit` im CI-Abschnitt des README.

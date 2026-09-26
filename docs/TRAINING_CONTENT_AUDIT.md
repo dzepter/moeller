@@ -22,7 +22,7 @@ wird ohne explizite Freigabe veröffentlicht.**
 
 | # | Fundstelle | Befund | Maßnahme |
 |---|-----------|--------|----------|
-| M1 | Folie 3 | Bürozeiten **Mo–Fr 09:00–12:00 und 13:00–17:00** widersprechen der Website-Vorgabe **Mo–Fr 08:00–17:00** (Masterprompt §1/§44) | Konflikt. Öffnungszeiten sind zentral als SystemSetting konfigurierbar; Academy zeigt denselben zentral gepflegten Wert. **Fachliche Klärung durch Möller nötig.** Bis dahin gilt websiteweit 08:00–17:00; die Academy-Lektion nennt den zentral konfigurierten Wert. |
+| M1 | Folie 3 | Bürozeiten **Mo–Fr 09:00–12:00 und 13:00–17:00** widersprechen der Website-Vorgabe **Mo–Fr 08:00–17:00** (Masterprompt §1/§44) | Konflikt. Öffnungszeiten sind zentral als SystemSetting konfigurierbar; Academy zeigt denselben zentral gepflegten Wert. **GEKLÄRT (Korrekturpaket, Punkt 20):** Verbindlich gilt durchgehend **Mo–Fr 08:00–17:00 Uhr**; die Folienangabe ist überholt. Quelle ist das zentrale Setting `contact.openingHours` (Website, Chat-Geschäftszeiten, E-Mail-Vorlagen, Academy-Footer); die Academy-Bürolektion nennt die Zeit jetzt ausdrücklich. |
 | M2 | Folie 3 | Faxnummer `06725 91 93 55 1` – laut Masterprompt §44 sind nur Telefon/E-Mail-Kontakte der Website zulässig | Fax wird auf der Website nicht verwendet; in der Academy-Lektion „Büro" nur nach Freigabe. |
 | M3 | Titel/Abschnittsfolien | Datumsstand **„Mai 2026"** vs. Dateiname **08-2026** | Datumsangaben werden nicht übernommen; Kursstände laufen über die Kursversionierung der Academy. |
 | M4 | gesamte Präsentation | Gemischte Sie-/Du-/Euch-Ansprache | Academy einheitlich in freundlicher Du-Ansprache (Addendum-Vorgabe), ohne fachliche Aussagen zu verändern. |
@@ -72,7 +72,7 @@ Legende Status: ✅ übernehmbar · ✂️ Screenshot nur redigiert/als Neu-Scre
 
 ## 6. Offene Fragen an Möller (nicht blockierend für die Entwicklung)
 
-1. Bürozeiten: 08:00–17:00 (Website-Vorgabe) oder 09:00–12:00 / 13:00–17:00 (Schulungsfolie)?
+1. ~~Bürozeiten: 08:00–17:00 (Website-Vorgabe) oder 09:00–12:00 / 13:00–17:00 (Schulungsfolie)?~~ → **Beantwortet: durchgehend 08:00–17:00 Uhr** (Korrekturpaket, Punkt 20).
 2. Ist das OTP-Secret aus Folie 6 ein echtes Konto-Secret? Falls ja: bitte zurücksetzen.
 3. Offizielle Portal-URL: `portal-moeller.de` (Folientext) – korrekt?
 4. Faxnummer noch aktuell/gewünscht (nur Academy-intern)?
