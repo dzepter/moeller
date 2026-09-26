@@ -22,7 +22,7 @@ import { sendMail } from "@/lib/email";
 import { tplPasswortReset } from "@/lib/email/templates";
 import { env } from "@/lib/env";
 import { getSetting } from "@/lib/settings";
-import { getCurrentUser } from "@/lib/rbac";
+import { getSessionUser } from "@/lib/rbac";
 import { consumePasswordReset } from "@/lib/auth/password-reset";
 
 export type AuthState = { error?: string } | null;
@@ -207,7 +207,8 @@ export type MfaSetupState = {
 } | null;
 
 export async function startMfaSetupAction(): Promise<MfaSetupState> {
-  const user = await getCurrentUser();
+  // getSessionUser: MFA-Einrichtung MUSS für betriebsgesperrte Admins erlaubt sein
+  const user = await getSessionUser();
   if (!user) redirect("/admin/login");
   const { secret, encrypted } = generateMfaSecret();
   const otpAuthUrl = buildOtpAuthUrl(user.email, secret);
@@ -217,7 +218,7 @@ export async function startMfaSetupAction(): Promise<MfaSetupState> {
 }
 
 export async function confirmMfaSetupAction(_prev: MfaSetupState, formData: FormData): Promise<MfaSetupState> {
-  const user = await getCurrentUser();
+  const user = await getSessionUser();
   if (!user) redirect("/admin/login");
   const secretEnc = String(formData.get("secretEnc") ?? "");
   const code = String(formData.get("code") ?? "");

@@ -80,6 +80,75 @@ function randomPassword(): string {
   return randomBytes(9).toString("base64url") + "A1a";
 }
 
+/**
+ * Systemrollen DETERMINISTISCH synchronisieren (exportiert für Tests):
+ * Die RolePermissions der Systemrollen entsprechen nach jedem Lauf EXAKT der
+ * aktuellen ROLE_PERMISSIONS-Definition – nicht mehr gewünschte Zuordnungen
+ * werden ENTFERNT (keine Privilege Accumulation über alte Seed-Stände hinweg).
+ * Idempotent; individuelle Nicht-System-Rollen bleiben unberührt.
+ */
+export async function syncSystemRoles(client: PrismaClient): Promise<void> {
+  for (const [key, name] of Object.entries(PERMISSIONS)) {
+    await client.permission.upsert({ where: { key }, update: { name }, create: { key, name } });
+  }
+  for (const [roleKey, permissionKeys] of Object.entries(ROLE_PERMISSIONS)) {
+    const role = await client.role.upsert({
+      where: { key: roleKey },
+      update: {},
+      create: {
+        key: roleKey,
+        name:
+          roleKey === "ADMINISTRATOR"
+            ? "Administrator / Geschäftsführer"
+            : roleKey === "INNENDIENST"
+              ? "Innendienst"
+              : "Teamleiter",
+        system: true,
+      },
+    });
+    const wanted = await client.permission.findMany({ where: { key: { in: permissionKeys } }, select: { id: true } });
+    const wantedIds = wanted.map((p) => p.id);
+    // Nicht mehr vorgesehene Zuordnungen entfernen …
+    await client.rolePermission.deleteMany({ where: { roleId: role.id, permissionId: { notIn: wantedIds } } });
+    // … und gewünschte sicherstellen
+    for (const permissionId of wantedIds) {
+      await client.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId } },
+        update: {},
+        create: { roleId: role.id, permissionId },
+      });
+    }
+  }
+}
+
+/**
+ * Bootstrap-Benutzer anlegen – Rollenmodell B (dokumentiert, siehe README):
+ * EXISTIERENDE Benutzer werden vom Seed in KEINER Weise verändert – weder
+ * Passwort noch Rollen noch Region. Der Seed legt Benutzer ausschließlich
+ * beim ersten Lauf an (mit exakt einer Systemrolle und Passwortwechsel-
+ * Pflicht); danach ist die Benutzerverwaltung im Admin die einzige Quelle
+ * für Rollenänderungen. Kein Mischmodell, keine Rollen-Akkumulation.
+ */
+export async function ensureBootstrapUser(
+  client: PrismaClient,
+  params: { email: string; name: string; roleKey: string; regionId?: string | null; password: string },
+): Promise<{ created: boolean }> {
+  const existing = await client.user.findUnique({ where: { email: params.email } });
+  if (existing) return { created: false };
+  const role = await client.role.findUniqueOrThrow({ where: { key: params.roleKey } });
+  await client.user.create({
+    data: {
+      email: params.email,
+      name: params.name,
+      passwordHash: await hash(params.password, { memoryCost: 19456, timeCost: 2, parallelism: 1 }),
+      regionId: params.regionId ?? null,
+      mustChangePassword: true,
+      roles: { create: { roleId: role.id } },
+    },
+  });
+  return { created: true };
+}
+
 async function main() {
   const isProd = process.env.NODE_ENV === "production";
 
@@ -94,40 +163,16 @@ async function main() {
     regions[key] = region.id;
   }
 
-  // ---------- Permissions & Rollen ----------
-  for (const [key, name] of Object.entries(PERMISSIONS)) {
-    await db.permission.upsert({ where: { key }, update: { name }, create: { key, name } });
-  }
-  for (const [roleKey, permissionKeys] of Object.entries(ROLE_PERMISSIONS)) {
-    const role = await db.role.upsert({
-      where: { key: roleKey },
-      update: {},
-      create: {
-        key: roleKey,
-        name:
-          roleKey === "ADMINISTRATOR"
-            ? "Administrator / Geschäftsführer"
-            : roleKey === "INNENDIENST"
-              ? "Innendienst"
-              : "Teamleiter",
-        system: true,
-      },
-    });
-    for (const pKey of permissionKeys) {
-      const permission = await db.permission.findUniqueOrThrow({ where: { key: pKey } });
-      await db.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
-        update: {},
-        create: { roleId: role.id, permissionId: permission.id },
-      });
-    }
-  }
+  // ---------- Permissions & Rollen (deterministisch synchronisiert) ----------
+  await syncSystemRoles(db);
 
   // ---------- Benutzer ----------
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || randomPassword();
   const userPassword = process.env.SEED_USER_PASSWORD || randomPassword();
   const printedCredentials: string[] = [];
 
+  // Rollenmodell B: bestehende Benutzer werden vom Seed NICHT verändert
+  // (siehe ensureBootstrapUser). Nur Neuanlagen erhalten Zugangsdaten-Ausgabe.
   async function upsertUser(params: {
     email: string;
     name: string;
@@ -136,28 +181,14 @@ async function main() {
     password: string;
     label: string;
   }) {
-    const existing = await db.user.findUnique({ where: { email: params.email } });
-    const role = await db.role.findUniqueOrThrow({ where: { key: params.roleKey } });
-    if (existing) {
-      await db.userRole.upsert({
-        where: { userId_roleId: { userId: existing.id, roleId: role.id } },
-        update: {},
-        create: { userId: existing.id, roleId: role.id },
-      });
-      return existing;
-    }
-    const user = await db.user.create({
-      data: {
-        email: params.email,
-        name: params.name,
-        passwordHash: await hash(params.password, { memoryCost: 19456, timeCost: 2, parallelism: 1 }),
-        regionId: params.regionKey ? regions[params.regionKey] : null,
-        mustChangePassword: true,
-        roles: { create: { roleId: role.id } },
-      },
+    const { created } = await ensureBootstrapUser(db, {
+      email: params.email,
+      name: params.name,
+      roleKey: params.roleKey,
+      regionId: params.regionKey ? regions[params.regionKey] : null,
+      password: params.password,
     });
-    printedCredentials.push(`${params.label}: ${params.email} / ${params.password}`);
-    return user;
+    if (created) printedCredentials.push(`${params.label}: ${params.email} / ${params.password}`);
   }
 
   await upsertUser({ email: "markus@bvg-moeller.de", name: "Markus Möller", roleKey: "ADMINISTRATOR", password: adminPassword, label: "Administrator" });
@@ -378,9 +409,14 @@ async function main() {
   console.log("Seed abgeschlossen.");
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => db.$disconnect());
+// Nur bei direktem Aufruf (npm run seed / tsx prisma/seed.ts) ausführen –
+// Tests importieren syncSystemRoles/ensureBootstrapUser, ohne zu seeden.
+const invokedDirectly = Boolean(process.argv[1] && /seed\.(ts|js|mts|mjs)$/.test(process.argv[1]));
+if (invokedDirectly) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => db.$disconnect());
+}

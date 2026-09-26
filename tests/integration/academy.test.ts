@@ -214,6 +214,48 @@ describe("Academy: Fortschritt, Quiz, Abschluss, Versionierung", () => {
   });
 });
 
+describe("Servicegrenzen: fremde Lesson/Question/Option wird abgelehnt (Defense-in-Depth)", () => {
+  it("Assignment Version A + Inhalte aus Version B → keine Progress-/Answer-Zeile", async () => {
+    const { nrw } = await createRegions();
+    const { lesson1, question } = await createCourse();
+    const { candidate } = await createCandidateWithApplication({ bundesland: "NRW", regionId: nrw.id });
+    const jana = asCurrentUser(await createUser({ name: "Jana" }), INNENDIENST_PERMS);
+    const assignment = await startOnboarding(jana, candidate.id); // → Version A (v1)
+
+    // Fremde Kursversion B mit eigener Lektion/Frage/Option
+    const course = await db.trainingCourse.findFirstOrThrow({ where: { slug: "admin-schulung" } });
+    const vB = await db.trainingCourseVersion.create({ data: { courseId: course.id, version: 2, passScore: 80 } });
+    const modB = await db.trainingModule.create({ data: { courseVersionId: vB.id, sortOrder: 0, title: "B" } });
+    const lessonB = await db.trainingLesson.create({ data: { moduleId: modB.id, sortOrder: 0, title: "B1", content: { blocks: [] } } });
+    const questionB = await db.trainingQuestion.create({
+      data: { lessonId: lessonB.id, sortOrder: 0, question: "B?", explanation: "B.", options: { create: [{ sortOrder: 0, text: "b", correct: true }] } },
+      include: { options: true },
+    });
+
+    // Fremde Lektion → abgelehnt, kein Progress
+    await expect(markLessonComplete(assignment.id, lessonB.id)).rejects.toThrow(ForbiddenError);
+    expect(await db.trainingProgress.count({ where: { assignmentId: assignment.id } })).toBe(0);
+
+    // Fremde Frage → abgelehnt, keine Antwort
+    await expect(
+      answerQuestion(assignment.id, questionB.id, [questionB.options[0]!.id]),
+    ).rejects.toThrow(ForbiddenError);
+    expect(await db.trainingAnswer.count({ where: { assignmentId: assignment.id } })).toBe(0);
+
+    // Eigene Frage, aber Option-ID einer FREMDEN Frage → abgelehnt statt „falsch“
+    await expect(
+      answerQuestion(assignment.id, question.id, [questionB.options[0]!.id]),
+    ).rejects.toThrow(ForbiddenError);
+    expect(await db.trainingAnswer.count({ where: { assignmentId: assignment.id } })).toBe(0);
+
+    // Kontrolle: legitime Nutzung funktioniert unverändert
+    await markLessonComplete(assignment.id, lesson1.id);
+    const right = question.options.find((o) => o.correct)!;
+    const ok = await answerQuestion(assignment.id, question.id, [right.id]);
+    expect(ok.correct).toBe(true);
+  });
+});
+
 describe("K: Academy-Zugang endet mit der Anonymisierung des Kandidaten", () => {
   it("gültige Einladung → nach Anonymisierung kein Zugang mehr; Abschlussdaten bleiben", async () => {
     const { nrw } = await createRegions();

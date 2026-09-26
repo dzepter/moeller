@@ -130,6 +130,11 @@ Umgebung gesetzt sein (der Start protokolliert dann eine laute Warnung).
   ohne Demo-Teamleiter), öffentliche Team-Einträge und der komplette
   Academy-Kurs. **Es werden produktiv keine Stellen angelegt oder
   veröffentlicht und keine Demo-/Testdaten erzeugt.**
+  Der Seed ist dabei deterministisch: Die Berechtigungen der Systemrollen
+  werden bei jedem Lauf exakt auf den aktuellen Stand synchronisiert (nicht
+  mehr vorgesehene Zuordnungen werden entfernt), und **bestehende Benutzer
+  werden vom Seed nie verändert** – weder Passwort noch Rollen (Rollenmodell
+  B; Rollenpflege ausschließlich über Admin → Benutzer).
 - **Demo-Daten (NUR außerhalb von `NODE_ENV=production`):** drei
   Demo-Teamleiter-Konten, vier Beispiel-Stellen und fiktive Demo-Bewerbungen.
 
@@ -413,10 +418,14 @@ Nachrichtentexte sind dort ebenfalls einstellbar.
 
 - Passwörter: Argon2id; Sessions: DB-gestützt mit gepfefferten Token-Hashes,
   `__Host-`-Cookie, Idle- und Absolut-Ablauf.
-- MFA (TOTP) für Administratoren verpflichtend und **technisch erzwungen**:
-  ein Administrator ohne eingerichtete MFA erreicht serverseitig ausschließlich
-  die Einrichtungsseite (`/admin/sicherheit`) – auch bei direktem Aufruf
-  beliebiger `/admin/…`-URLs. TOTP-Secrets ruhen AES-256-GCM-verschlüsselt.
+- MFA (TOTP) für Administratoren verpflichtend und **technisch erzwungen –
+  an der Autorisierungsgrenze, nicht nur in der Navigation**: Solange ein
+  Administrator die Pflicht-MFA nicht eingerichtet hat (oder ein Benutzer
+  sein Startpasswort noch ändern muss), liefern `getCurrentUser()` und
+  `assertPermission()` zentral fail-closed – jede operative Server Action
+  und jeder geschützte Route Handler lehnt ab, unabhängig davon, welche
+  Seite die UI anzeigt. Erreichbar bleiben nur Logout, Passwortänderung und
+  die MFA-Einrichtung. TOTP-Secrets ruhen AES-256-GCM-verschlüsselt.
 - Berechtigungen werden **serverseitig** in jeder Server-Action und Route
   geprüft (Objekt-Ebene, nicht nur Menü-Ausblendung); dedizierte
   Permission-Tests sichern das ab.

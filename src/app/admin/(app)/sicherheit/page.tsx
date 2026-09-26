@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/rbac";
+import { getSessionUser } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { PageHeader, Card, Badge } from "@/components/admin/ui";
 import { MfaSetup, DisableMfaForm } from "@/components/admin/mfa-widgets";
@@ -11,7 +12,10 @@ import { formatDateTime } from "@/lib/utils";
 export const metadata: Metadata = { title: "Mein Konto" };
 
 export default async function SicherheitPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user = await requireUser();
+  // Bewusst getSessionUser: Diese Seite ist der Ausweg aus der Betriebssperre
+  // (MFA einrichten) und muss auch für gesperrte Administratoren erreichbar sein.
+  const user = await getSessionUser();
+  if (!user) redirect("/admin/login");
   const params = await searchParams;
   const session = await getSession();
   const sessions = await db.session.findMany({

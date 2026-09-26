@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getSession } from "@/lib/auth/session";
-import { getCurrentUser, hasPermission, type PermissionKey } from "@/lib/rbac";
-import { getSetting } from "@/lib/settings";
+import { getSessionUser, getOperationalLock, hasPermission, type PermissionKey } from "@/lib/rbac";
 import { AdminNav, type NavItem } from "@/components/admin/nav";
 import { logoutAction } from "@/app/actions/auth";
 import { initials } from "@/lib/utils";
@@ -37,20 +36,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!session) redirect("/admin/login");
   if (session.mfaPending) redirect("/admin/login/mfa");
   if (session.user.mustChangePassword) redirect("/admin/passwort-aendern");
-  const user = await getCurrentUser();
+  // Bewusst getSessionUser (ohne Betriebssperre): das Layout muss auch für
+  // gesperrte Benutzer rendern können – nämlich genau auf der Seite, die den
+  // Sperrzustand auflöst (/admin/sicherheit). Die eigentliche Durchsetzung
+  // liegt NICHT hier, sondern zentral in getCurrentUser()/assertPermission()
+  // an der Action-/API-Grenze; dieses UI-Gate ist nur Komfort-Routing.
+  const user = await getSessionUser();
   if (!user) redirect("/admin/login");
 
-  // Zentrales MFA-Pflicht-Gate: Administratoren ohne eingerichtete MFA
-  // erreichen ausschließlich die Einrichtungsseite (und deren Actions/Logout).
-  // Die Prüfung liegt im Layout, damit auch direkt aufgerufene /admin/…-URLs
-  // erfasst sind; der Pfad kommt aus der Middleware (x-pathname).
-  if (!user.mfaEnabled && user.roleKeys.includes("ADMINISTRATOR")) {
-    const mfaForAdmins = await getSetting("security.mfaRequiredForAdmins");
-    if (mfaForAdmins) {
-      const pathname = (await headers()).get("x-pathname");
-      if (pathname !== null && !pathname.startsWith("/admin/sicherheit")) {
-        redirect("/admin/sicherheit?pflicht=1");
-      }
+  const lock = await getOperationalLock(user);
+  if (lock === "MFA_EINRICHTUNG") {
+    const pathname = (await headers()).get("x-pathname");
+    if (pathname !== null && !pathname.startsWith("/admin/sicherheit")) {
+      redirect("/admin/sicherheit?pflicht=1");
     }
   }
 

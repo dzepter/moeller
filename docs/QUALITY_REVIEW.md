@@ -1,7 +1,8 @@
 # Abschließende Qualitätsprüfung (Masterprompt §47)
 
-Stand: 26.09.2026, **nach dem Hardening-/Security-/QA-/Polish-Durchgang** auf
-Basis des externen Review-Pakets (Review-Basis war `25ffe04`). Geprüft am
+Stand: 26.09.2026, nach ZWEI externen Review-Runden: Hardening-Durchgang
+(Basis `25ffe04` → `4f4b41b`) und finaler Security-/Datenintegritäts-
+Durchgang (Basis `4f4b41b`). Geprüft am
 fertigen Production-Build (Standalone) mit geseedeter Datenbank.
 
 | # | Frage | Ergebnis | Beleg |
@@ -49,11 +50,35 @@ erzeugte in den Auslieferungsrouten einen 500er (jetzt sauberes 404 + Log);
 sein Arbeitsverzeichnis wechselt (Playwright-Konfiguration und README
 angepasst; im Docker-Betrieb unverändert korrekt).
 
+
+## Finaler Security-Durchgang (Runde 2, auf `4f4b41b`)
+
+Alle acht extern gemeldeten Punkte wurden am Code reproduziert (jeder traf zu)
+und behoben:
+
+| # | Punkt | Kern der Lösung | Tests |
+| --- | --- | --- | --- |
+| 1 | MFA-/First-Login-Pflicht an der Action-/API-Grenze | Zentrale Betriebssperre in `getCurrentUser()`/`assertPermission()` (fail closed); `getSessionUser()` nur für Entsperr-Flows (D39) | `operational-lock.test.ts` A–F an echten Actions + Route Handler; E2E: API-403 mit gesperrter Session |
+| 2 | Manuelle Anonymisierung Storage-first | Mark-then-Delete wie Retention (gemeinsames `deletePendingFiles`) | `storage-consistency.test.ts` (Storage-Ausfall → PII anonymisiert, Datei markiert, Retry räumt) |
+| 3 | Seed-Privilege-Accumulation | `syncSystemRoles()` mit Entzug; Rollenmodell B: Bestandsbenutzer unangetastet (D40) | `seed-sync.test.ts` |
+| 4 | Reset-Failure-Window | Hash vor Claim; Claim+Passwort+Revoke in EINER Transaktion; Rollback verbrennt keinen Token | `auth-hardening.test.ts` (TX-Fehler → Token nutzbar; Sessions widerrufen; parallel weiter 1 Gewinner) |
+| 5 | Referral-Match per Nachname allein | E-Mail ODER Telefon ODER Name+Wohnort (beide nötig, Vorname falls bekannt) (D42) | `hardening-idor.test.ts` (Namensvetter ohne Stadt abgelehnt; Telefon/Name+Stadt akzeptiert) |
+| 6 | Storage↔DB-Lebenszyklen | CV/Media-Upload: put vor DB + Kompensations-Delete; Media-Delete: DB zuerst, Storage best effort + Log (D41) | `storage-consistency.test.ts` A/B/C |
+| 7 | Go-Live nur Marker-basiert | Zusätzlich: Leere/ausgehöhlte Rechtstexte = Blocker; Impressum-Pflichtbausteine (Vertretung/Register/USt) als technische Vollständigkeit – nichts wird erfunden | `golive.test.ts` |
+| 8 | Academy-Servicegrenzen | Defense-in-Depth in `markLessonComplete`/`answerQuestion`: Versions-Zugehörigkeit + fremde Option-IDs werden ABGELEHNT statt als „falsch“ gewertet | `academy.test.ts` (fremde Lesson/Question/Option → kein Write) |
+
+**Selbstangriff Runde 2 (Service-Ebene + Live-HTTP gegen den Production-Build):**
+Admin ohne Pflicht-MFA → operative Actions/`/api/admin/reporting/export` abgelehnt (403) ✚
+mustChangePassword-Session (echter Login) → API 403, Admin-Seite 307 zur Passwortänderung ✚
+Anonymisierung bei Storage-Ausfall → PII weg, Datei markiert, Retry räumt ✚
+Referral-Namensvetter abgelehnt ✚ Reset parallel/TX-Fehler robust ✚
+fremde Academy-Lesson/Question/Option → kein Write ✚ CV-/Media-Fehlerpfade ohne Orphans.
+
 ## Abschluss-Gates (letzter Lauf, nach ALLEN Änderungen)
 
 - `npm run lint` – 0 Fehler, 0 Warnungen
 - `npm run typecheck` – fehlerfrei (TypeScript strict)
-- `npm test` – **79/79** bestanden
+- `npm test` – **96/96** bestanden
 - `npm run build` – erfolgreich (Standalone, inkl. Proxy/Middleware)
 - `npm run e2e` – **16/16** bestanden
 - Accessibility: axe (WCAG 2.0/2.1/2.2 A+AA-Regeln, alle Impact-Klassen außer `minor` blockierend) – 0 Verstöße; manuelle 2.2-Checkliste: `docs/ACCESSIBILITY.md`

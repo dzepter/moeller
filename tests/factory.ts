@@ -42,6 +42,7 @@ export function asCurrentUser(
     roleKeys: [],
     permissions: new Set(permissions),
     mfaEnabled: false,
+    mustChangePassword: false,
   };
 }
 

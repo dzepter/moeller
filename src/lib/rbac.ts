@@ -57,9 +57,16 @@ export type CurrentUser = {
   roleKeys: string[];
   permissions: Set<string>;
   mfaEnabled: boolean;
+  mustChangePassword: boolean;
 };
 
-export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+/**
+ * Konto-Identität OHNE Betriebssperre: nur für die Flows, die nötig sind, um
+ * einen gesperrten Zustand zu VERLASSEN (Passwort ändern, MFA einrichten,
+ * „Mein Konto“-Seite, Logout, Layout-Anzeige). Operative Actions/Routen
+ * benutzen ausschließlich getCurrentUser() bzw. assertPermission().
+ */
+export const getSessionUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await getSession();
   if (!session || session.mfaPending) return null;
   const u = session.user;
@@ -78,17 +85,49 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     roleKeys,
     permissions,
     mfaEnabled: Boolean(u.mfaEnabledAt),
+    mustChangePassword: u.mustChangePassword,
   };
+});
+
+export type OperationalLock = "PASSWORT_WECHSEL" | "MFA_EINRICHTUNG" | null;
+
+/**
+ * Betriebssperre: Ein Benutzer mit erzwungenem Passwortwechsel oder ein
+ * Administrator ohne eingerichtete Pflicht-MFA darf KEINE operativen
+ * Funktionen ausführen – unabhängig davon, welche Seite die UI anzeigt.
+ */
+export async function getOperationalLock(user: CurrentUser): Promise<OperationalLock> {
+  if (user.mustChangePassword) return "PASSWORT_WECHSEL";
+  if (!user.mfaEnabled && user.roleKeys.includes("ADMINISTRATOR")) {
+    if (await getSetting("security.mfaRequiredForAdmins")) return "MFA_EINRICHTUNG";
+  }
+  return null;
+}
+
+/**
+ * Operativer Benutzer: DIE zentrale Autorisierungsgrenze für sämtliche
+ * Server Actions und geschützten Route Handler. Liefert null (fail closed),
+ * solange eine Betriebssperre aktiv ist – die MFA-Pflicht ist damit kein
+ * reines UI-/Layout-Gate, sondern gilt an der Action-/API-Grenze.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  const user = await getSessionUser();
+  if (!user) return null;
+  if (await getOperationalLock(user)) return null;
+  return user;
 });
 
 export function hasPermission(user: CurrentUser, permission: PermissionKey): boolean {
   return user.permissions.has(permission);
 }
 
-/** Für Layouts/Pages: leitet zum Login um. */
+/** Für Layouts/Pages: leitet zum Login bzw. zum Entsperr-Schritt um. */
 export async function requireUser(): Promise<CurrentUser> {
-  const user = await getCurrentUser();
+  const user = await getSessionUser();
   if (!user) redirect("/admin/login");
+  const lock = await getOperationalLock(user);
+  if (lock === "PASSWORT_WECHSEL") redirect("/admin/passwort-aendern");
+  if (lock === "MFA_EINRICHTUNG") redirect("/admin/sicherheit?pflicht=1");
   return user;
 }
 
@@ -107,8 +146,11 @@ export class ForbiddenError extends Error {
 }
 
 export async function assertPermission(permission: PermissionKey): Promise<CurrentUser> {
-  const user = await getCurrentUser();
+  const user = await getSessionUser();
   if (!user) throw new ForbiddenError("Nicht angemeldet");
+  const lock = await getOperationalLock(user);
+  if (lock === "PASSWORT_WECHSEL") throw new ForbiddenError("Bitte zuerst das Startpasswort ändern.");
+  if (lock === "MFA_EINRICHTUNG") throw new ForbiddenError("Bitte zuerst die Zwei-Faktor-Anmeldung einrichten.");
   if (!hasPermission(user, permission)) throw new ForbiddenError();
   return user;
 }

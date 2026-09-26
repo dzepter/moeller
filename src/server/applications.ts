@@ -42,17 +42,25 @@ export async function submitApplication(
   // anhängen. Duplikate erkennt findDuplicateHints(); zusammengeführt wird
   // ausschließlich manuell durch den Innendienst (mergeCandidates).
 
-  // Optionaler Lebenslauf
+  // Optionaler Lebenslauf: validieren, scannen und VOR der DB-Transaktion
+  // physisch ablegen. Schlägt die Transaktion danach fehl, wird die Datei
+  // kompensierend wieder gelöscht – so entsteht kein dauerhaftes Orphan
+  // (DB und Storage können keine gemeinsame Transaktion bilden).
   let cvFileId: string | undefined;
+  let cvStored: { fileName: string; mime: string } | null = null;
   if (opts?.cv) {
     if (!job?.cvUploadEnabled) throw new Error("Für diese Stelle ist kein Datei-Upload vorgesehen.");
     const validationError = validateUpload(opts.cv.name, opts.cv.data, ["pdf", "image"]);
     if (validationError) throw new Error(validationError);
     const scan = await malwareScanner.scan(opts.cv.data);
     if (!scan.clean) throw new Error("Die Datei konnte nicht angenommen werden.");
+    const fileName = randomFileName(opts.cv.name);
+    const mime = detectedMime(opts.cv.name, opts.cv.data);
+    await storage.put("private", fileName, opts.cv.data, mime);
+    cvStored = { fileName, mime };
   }
 
-  const result = await db.$transaction(async (tx) => {
+  const runTransaction = () => db.$transaction(async (tx) => {
     const candidate = await tx.candidate.create({
       data: {
         firstName: input.firstName,
@@ -67,16 +75,14 @@ export async function submitApplication(
       },
     });
 
-    if (opts?.cv && job?.cvUploadEnabled) {
-      const fileName = randomFileName(opts.cv.name);
-      await storage.put("private", fileName, opts.cv.data, detectedMime(opts.cv.name, opts.cv.data));
+    if (cvStored && opts?.cv) {
       const file = await tx.privateFile.create({
         data: {
           candidateId: candidate.id,
           kind: "CV",
-          fileName,
+          fileName: cvStored.fileName,
           originalName: opts.cv.name.slice(0, 200),
-          mime: detectedMime(opts.cv.name, opts.cv.data),
+          mime: cvStored.mime,
           size: opts.cv.data.length,
         },
       });
@@ -122,6 +128,20 @@ export async function submitApplication(
     });
     return { candidate, application };
   });
+
+  let result: Awaited<ReturnType<typeof runTransaction>>;
+  try {
+    result = await runTransaction();
+  } catch (err) {
+    // Kompensation: bereits abgelegte CV-Datei wieder entfernen, damit kein
+    // dauerhaftes Storage-Orphan entsteht (Best Effort + Log).
+    if (cvStored) {
+      await storage.delete("private", cvStored.fileName).catch((cleanupErr) => {
+        console.error(`[upload] Kompensations-Löschung fehlgeschlagen: private/${cvStored?.fileName}`, cleanupErr);
+      });
+    }
+    throw err;
+  }
 
   await audit({
     action: "application.created",

@@ -21,23 +21,66 @@ function scanContentForPlaceholders(content: unknown): boolean {
   return JSON.stringify(content ?? "").includes(PLACEHOLDER_MARKER);
 }
 
+/** Sichtbaren Text eines Rechtstext-Bodys grob normalisieren (Markdown-Zeichen raus). */
+function plainText(body: unknown): string {
+  return String(body ?? "").replace(/[#>*_`\-]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Rechtstexte: rein TECHNISCHE Vollständigkeitsprüfung. Es wird nie Inhalt
+ * erfunden und nicht behauptet, ein Text sei juristisch geprüft – geprüft
+ * wird nur, dass die Seite existiert, nicht leer/ausgehöhlt ist, keine
+ * Platzhaltermarker mehr trägt und (beim Impressum) die vorgesehenen
+ * Pflichtbausteine überhaupt vorhanden sind.
+ */
+async function checkLegalPage(
+  slug: "impressum" | "datenschutz",
+  name: string,
+  minLength: number,
+  findings: GoLiveFinding[],
+): Promise<void> {
+  const content = await getPublishedContent(slug);
+  const body = plainText((content.inhalt as Record<string, unknown> | undefined)?.body);
+
+  if (scanContentForPlaceholders(content)) {
+    findings.push({
+      level: "BLOCKER",
+      bereich: name,
+      text: `Der veröffentlichte Text enthält noch „${PLACEHOLDER_MARKER} …“-Markierungen. Echte Angaben (z. B. Geschäftsführung, Registergericht, HRB, USt-ID) müssen vom Betreiber geliefert und unter Website → ${name} eingepflegt werden.`,
+    });
+  }
+  if (body.length < minLength) {
+    // Auch das bloße Löschen der Platzhalter darf den Blocker nicht auflösen:
+    // ein leerer oder ausgehöhlter Rechtstext ist genauso wenig freigabefähig.
+    findings.push({
+      level: "BLOCKER",
+      bereich: name,
+      text: `Der veröffentlichte Text ist leer oder offensichtlich unvollständig (${body.length} Zeichen). Der vollständige, vom Betreiber gelieferte Rechtstext muss unter Website → ${name} eingepflegt werden.`,
+    });
+  }
+  if (slug === "impressum" && body.length > 0) {
+    const bausteine: Array<[RegExp, string]> = [
+      [/vertret/i, "Vertretungsberechtigte Geschäftsführung („Vertreten durch“)"],
+      [/register/i, "Registereintrag (Registergericht + Nummer)"],
+      [/umsatzsteuer|ust[-\s]?id/i, "Umsatzsteuer-ID"],
+    ];
+    for (const [pattern, label] of bausteine) {
+      if (!pattern.test(body)) {
+        findings.push({
+          level: "BLOCKER",
+          bereich: name,
+          text: `Pflichtbaustein fehlt im veröffentlichten Text: ${label}. Die echten Angaben liefert der Betreiber – es wird nichts automatisch befüllt.`,
+        });
+      }
+    }
+  }
+}
+
 export async function runGoLiveChecks(): Promise<GoLiveFinding[]> {
   const findings: GoLiveFinding[] = [];
 
-  // Rechtstexte: Platzhalter sind harte Blocker für den Livegang.
-  for (const [slug, name] of [
-    ["impressum", "Impressum"],
-    ["datenschutz", "Datenschutzerklärung"],
-  ] as const) {
-    const content = await getPublishedContent(slug);
-    if (scanContentForPlaceholders(content)) {
-      findings.push({
-        level: "BLOCKER",
-        bereich: name,
-        text: `Der veröffentlichte Text enthält noch „${PLACEHOLDER_MARKER} …“-Markierungen. Echte Angaben (z. B. Geschäftsführung, Registergericht, HRB, USt-ID) müssen vom Betreiber geliefert und unter Website → ${name} eingepflegt werden.`,
-      });
-    }
-  }
+  await checkLegalPage("impressum", "Impressum", 150, findings);
+  await checkLegalPage("datenschutz", "Datenschutzerklärung", 300, findings);
 
   // Konfiguration, ohne die der Betrieb erkennbar unvollständig ist.
   if (env.email.provider === "log") {

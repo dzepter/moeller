@@ -45,6 +45,11 @@ test.describe("Interner Bereich", () => {
       await page.waitForURL(/\/admin\/sicherheit/);
     }
     await expect(page.getByText(/Zwei-Faktor/i).first()).toBeVisible();
+
+    // Die Sperre ist KEIN UI-Gate: auch die API-Grenze lehnt mit derselben
+    // Session ab (zentrale Betriebssperre in getCurrentUser/assertPermission).
+    const api = await page.request.get("/api/admin/reporting/export");
+    expect(api.status()).toBe(403);
   });
 
   test("Innendienst: Bewerbung finden, Status setzen, Wiedervorlage anlegen", async ({ page }) => {

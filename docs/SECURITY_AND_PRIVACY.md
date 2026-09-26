@@ -17,6 +17,15 @@ Stand: 2026-09-26
   pro Konto + IP-Hash, Magic-Link-Prüfung 20/15min, öffentliche Formulare 5/10min pro IP-Hash + Honeypot
   + Zeitfalle. IPs werden dafür nur als **gesalzener Hash mit 24h-TTL** gespeichert.
 
+
+**Betriebssperre (First-Login/MFA-Pflicht):** `mustChangePassword` und die
+Admin-Pflicht-MFA werden zentral in `getCurrentUser()`/`assertPermission()`
+durchgesetzt (fail closed). Server Actions und geschützte Route Handler sind
+damit automatisch gesperrt, bis der Zustand aufgelöst ist; nur die
+Entsperr-Flows (Passwort ändern, MFA-Setup, Logout) laufen über
+`getSessionUser()`. Getestet an echten Action-/API-Grenzen
+(`tests/permissions/operational-lock.test.ts`, E2E inkl. API-Aufruf).
+
 ## 2. Autorisierung
 
 - **RBAC** aus DB (Role → Permission), Rollen nicht hart verdrahtet; Seeds: Administrator, Innendienst,

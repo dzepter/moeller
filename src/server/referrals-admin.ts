@@ -56,25 +56,35 @@ export async function convertReferral(user: CurrentUser, referralId: string, opt
   if (opts?.linkCandidateId) {
     const referredEmailNorm = referral.referredEmail ? normalizeEmail(referral.referredEmail) : null;
     const referredPhoneNorm = referral.referredPhone ? normalizePhone(referral.referredPhone) : null;
-    const match = await db.candidate.findFirst({
-      where: {
-        id: opts.linkCandidateId,
-        anonymizedAt: null,
-        OR: [
-          ...(referredEmailNorm ? [{ emailNormalized: referredEmailNorm }] : []),
-          ...(referredPhoneNorm ? [{ phoneNormalized: referredPhoneNorm }] : []),
-          {
-            AND: [
-              { lastName: { equals: referral.referredLastName, mode: "insensitive" as const } },
-              ...(referral.referredCity
-                ? [{ city: { equals: referral.referredCity, mode: "insensitive" as const } }]
-                : []),
-            ],
-          },
-        ],
-      },
-      select: { id: true },
-    });
+    const referredCity = referral.referredCity?.trim() || null;
+
+    // Zulässige Matches: identische E-Mail ODER identisches Telefon ODER
+    // Nachname UND Wohnort (beide Werte müssen vorhanden sein; Vorname wird,
+    // falls bekannt, zusätzlich verlangt). Ein Nachname allein ist NIEMALS
+    // ein positiver Match – häufige Namen dürfen keine Fremdverknüpfung erlauben.
+    const criteria: Array<Record<string, unknown>> = [
+      ...(referredEmailNorm ? [{ emailNormalized: referredEmailNorm }] : []),
+      ...(referredPhoneNorm ? [{ phoneNormalized: referredPhoneNorm }] : []),
+      ...(referredCity
+        ? [
+            {
+              AND: [
+                { lastName: { equals: referral.referredLastName, mode: "insensitive" as const } },
+                { city: { equals: referredCity, mode: "insensitive" as const } },
+                ...(referral.referredFirstName
+                  ? [{ firstName: { equals: referral.referredFirstName, mode: "insensitive" as const } }]
+                  : []),
+              ],
+            },
+          ]
+        : []),
+    ];
+    const match = criteria.length
+      ? await db.candidate.findFirst({
+          where: { id: opts.linkCandidateId, anonymizedAt: null, OR: criteria },
+          select: { id: true },
+        })
+      : null;
     if (!match) {
       throw new Error("Der gewählte Bewerber passt nicht zur empfohlenen Person (kein Duplikat-Treffer).");
     }

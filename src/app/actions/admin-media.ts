@@ -49,22 +49,34 @@ export async function uploadMediaAction(_prev: ActionResult, formData: FormData)
   }
 
   const fileName = randomFileName(file.name);
-  await storage.put(visibility === "PUBLIC" ? "public" : "private", fileName, data, mime);
-  const asset = await db.mediaAsset.create({
-    data: {
-      fileName,
-      originalName: file.name.slice(0, 200),
-      mime,
-      size: data.length,
-      width,
-      height,
-      alt,
-      category,
-      visibility,
-      approval: "FREIGABE_ERFORDERLICH",
-      uploadedById: user.id,
-    },
-  });
+  const scope = visibility === "PUBLIC" ? ("public" as const) : ("private" as const);
+  await storage.put(scope, fileName, data, mime);
+  let asset;
+  try {
+    asset = await db.mediaAsset.create({
+      data: {
+        fileName,
+        originalName: file.name.slice(0, 200),
+        mime,
+        size: data.length,
+        width,
+        height,
+        alt,
+        category,
+        visibility,
+        approval: "FREIGABE_ERFORDERLICH",
+        uploadedById: user.id,
+      },
+    });
+  } catch (err) {
+    // Kompensation: DB-Anlage fehlgeschlagen → physische Datei wieder
+    // entfernen, damit kein Storage-Orphan ohne DB-Referenz zurückbleibt.
+    await storage.delete(scope, fileName).catch((cleanupErr) => {
+      console.error(`[media] Kompensations-Löschung fehlgeschlagen: ${scope}/${fileName}`, cleanupErr);
+    });
+    console.error("[media] Upload-DB-Anlage fehlgeschlagen:", err instanceof Error ? err.message : err);
+    return { error: "Der Upload konnte nicht gespeichert werden. Bitte erneut versuchen." };
+  }
   await audit({ action: "media.uploaded", actorId: user.id, entityType: "MediaAsset", entityId: asset.id, meta: { category, visibility } });
   revalidatePath("/admin/medien");
   return { ok: true };
@@ -98,8 +110,19 @@ export async function deleteMediaAction(formData: FormData): Promise<void> {
   if (!id) return;
   const asset = await db.mediaAsset.findUnique({ where: { id } });
   if (!asset) return;
-  await storage.delete(asset.visibility === "PUBLIC" ? "public" : "private", asset.fileName);
+  // DB zuerst: Danach existiert garantiert keine Referenz mehr auf die Datei.
+  // Schlägt anschließend das Storage-Löschen fehl, bleibt schlimmstenfalls
+  // eine referenzlose Datei zurück – das wird geloggt und kann nachgeräumt
+  // werden; die umgekehrte, gefährliche Richtung (DB zeigt auf gelöschte
+  // Datei) ist ausgeschlossen. Schlägt schon das DB-Löschen fehl, ist gar
+  // nichts passiert (voll wiederholbar).
   await db.mediaAsset.delete({ where: { id } });
+  await storage.delete(asset.visibility === "PUBLIC" ? "public" : "private", asset.fileName).catch((err) => {
+    console.error(
+      `[media] Storage-Löschung fehlgeschlagen (Datei bleibt referenzlos zurück): ${asset.visibility === "PUBLIC" ? "public" : "private"}/${asset.fileName}`,
+      err,
+    );
+  });
   await audit({ action: "media.deleted", actorId: user.id, entityType: "MediaAsset", entityId: id, meta: { name: asset.originalName } });
   revalidatePath("/admin/medien");
 }

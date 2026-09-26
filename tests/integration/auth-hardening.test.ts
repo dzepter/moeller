@@ -1,9 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { consumePasswordReset } from "@/lib/auth/password-reset";
 import { generateToken, hashToken } from "@/lib/crypto";
 import { createUser } from "../factory";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("H: Rate-Limit ist unter parallelen Requests atomar", () => {
   it("30 gleichzeitige Requests, Limit 10 → exakt 10 kommen durch", async () => {
@@ -57,6 +61,42 @@ describe("I: Passwort-Reset-Token ist nur einmal verwendbar – auch parallel", 
     // Token ist verbraucht, dritter Versuch scheitert ebenfalls
     const c = await consumePasswordReset(token, "Drittes2026!z");
     expect(c.ok).toBe(false);
+  });
+
+  it("DB-Fehler in der Transaktion verbrennt den Token NICHT (kein Failure-Window)", async () => {
+    const user = await createUser({ name: "Robust" });
+    const token = generateToken();
+    await db.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+
+    // Claim + Passwort + Session-Revoke laufen in EINER Transaktion – schlägt
+    // sie fehl (Rollback), ist usedAt nicht gesetzt und der Token bleibt nutzbar.
+    const spy = vi.spyOn(db, "$transaction").mockRejectedValueOnce(new Error("DB weg"));
+    const failed = await consumePasswordReset(token, "NeuesPasswort2026!a");
+    expect(failed.ok).toBe(false);
+    spy.mockRestore();
+
+    const row = await db.passwordResetToken.findFirstOrThrow({ where: { userId: user.id } });
+    expect(row.usedAt).toBeNull();
+
+    // Danach funktioniert derselbe Token ganz normal – genau einmal.
+    expect((await consumePasswordReset(token, "NeuesPasswort2026!b")).ok).toBe(true);
+    expect((await consumePasswordReset(token, "NeuesPasswort2026!c")).ok).toBe(false);
+  });
+
+  it("erfolgreicher Reset widerruft alle aktiven Sessions des Benutzers", async () => {
+    const user = await createUser({ name: "Sessionreich" });
+    await db.session.create({
+      data: { userId: user.id, tokenHash: `th-${user.id}`, expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    const token = generateToken();
+    await db.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    expect((await consumePasswordReset(token, "NeuesPasswort2026!d")).ok).toBe(true);
+    const sessions = await db.session.findMany({ where: { userId: user.id } });
+    expect(sessions.every((s) => s.revokedAt !== null)).toBe(true);
   });
 
   it("abgelaufene und fremd-inaktive Tokens werden abgelehnt", async () => {

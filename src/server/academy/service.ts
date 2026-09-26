@@ -233,6 +233,16 @@ async function recalcProgress(assignmentId: string): Promise<number> {
 }
 
 export async function markLessonComplete(assignmentId: string, lessonId: string) {
+  // Defense-in-Depth (zusätzlich zur Prüfung in den Actions): die Lektion
+  // muss zur Kursversion GENAU dieses Assignments gehören – sonst wird
+  // keinerlei Progress geschrieben.
+  const [assignment, lesson] = await Promise.all([
+    db.trainingAssignment.findUniqueOrThrow({ where: { id: assignmentId }, select: { courseVersionId: true } }),
+    db.trainingLesson.findUnique({ where: { id: lessonId }, select: { module: { select: { courseVersionId: true } } } }),
+  ]);
+  if (!lesson || lesson.module.courseVersionId !== assignment.courseVersionId) {
+    throw new ForbiddenError("Lektion gehört nicht zu diesem Kurs.");
+  }
   await db.trainingProgress.upsert({
     where: { assignmentId_lessonId: { assignmentId, lessonId } },
     update: { completedAt: new Date() },
@@ -249,8 +259,22 @@ export async function markLessonComplete(assignmentId: string, lessonId: string)
 export async function answerQuestion(assignmentId: string, questionId: string, selectedOptionIds: string[]) {
   const question = await db.trainingQuestion.findUniqueOrThrow({
     where: { id: questionId },
-    include: { options: true },
+    include: { options: true, lesson: { select: { module: { select: { courseVersionId: true } } } } },
   });
+  // Defense-in-Depth: Frage muss zur Kursversion dieses Assignments gehören …
+  const assignment = await db.trainingAssignment.findUniqueOrThrow({
+    where: { id: assignmentId },
+    select: { courseVersionId: true },
+  });
+  if (question.lesson.module.courseVersionId !== assignment.courseVersionId) {
+    throw new ForbiddenError("Frage gehört nicht zu diesem Kurs.");
+  }
+  // … und übergebene Option-IDs müssen Optionen GENAU dieser Frage sein –
+  // fremde IDs werden abgelehnt statt still als „falsch“ gewertet.
+  const validOptionIds = new Set(question.options.map((o) => o.id));
+  if (selectedOptionIds.some((id) => !validOptionIds.has(id))) {
+    throw new ForbiddenError("Ungültige Antwortoption.");
+  }
   const correctIds = question.options.filter((o) => o.correct).map((o) => o.id).sort();
   const given = [...selectedOptionIds].sort();
   const correct = correctIds.length === given.length && correctIds.every((id, i) => id === given[i]);

@@ -3,10 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasPermission } from "@/lib/rbac";
-import { runRetention } from "@/server/retention";
+import { runRetention, deletePendingFiles } from "@/server/retention";
 import { audit } from "@/lib/audit";
 import { normalizeEmail, normalizePhone } from "@/lib/utils";
-import { storage } from "@/lib/storage";
 import type { ActionResult } from "@/app/actions/admin-candidates";
 
 export async function runRetentionAction(_prev: ActionResult, _formData: FormData): Promise<ActionResult> {
@@ -97,15 +96,19 @@ export async function anonymizeCandidateAction(formData: FormData): Promise<void
   const candidateId = String(formData.get("candidateId") ?? "");
   if (!candidateId) return;
 
-  const candidate = await db.candidate.findUnique({ where: { id: candidateId }, include: { files: true } });
+  const candidate = await db.candidate.findUnique({ where: { id: candidateId } });
   if (!candidate || candidate.anonymizedAt) return;
 
-  for (const file of candidate.files) {
-    await storage.delete("private", file.fileName);
-  }
+  // Mark-then-Delete – dieselbe Strategie wie die automatische Retention:
+  // Die DB-Transaktion anonymisiert und MARKIERT Dateien nur
+  // (pendingDeletionAt); markierte Dateien werden nie ausgeliefert. Die
+  // physische Löschung folgt danach retryfähig (deletePendingFiles) – schlägt
+  // das Storage fehl, bleibt die Markierung stehen und der nächste
+  // Retention-Lauf räumt auf. So kann nie eine DB-Referenz auf eine bereits
+  // verschwundene Datei zurückbleiben.
   const ANON = "entfernt";
   await db.$transaction([
-    db.privateFile.deleteMany({ where: { candidateId } }),
+    db.privateFile.updateMany({ where: { candidateId }, data: { pendingDeletionAt: new Date() } }),
     db.candidateNote.deleteMany({ where: { candidateId } }),
     db.reminder.deleteMany({ where: { candidateId } }),
     db.application.updateMany({
@@ -127,5 +130,7 @@ export async function anonymizeCandidateAction(formData: FormData): Promise<void
     }),
   ]);
   await audit({ action: "candidate.anonymized", actorId: user.id, entityType: "Candidate", entityId: candidateId });
+  // Phase 2: physisch löschen; Fehler bleiben markiert (Retry im nächsten Lauf)
+  await deletePendingFiles();
   revalidatePath("/admin/datenschutz");
 }

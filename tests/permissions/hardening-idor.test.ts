@@ -328,4 +328,105 @@ describe("D: Referral-Konvertierung akzeptiert nur echte Duplikat-Matches", () =
     expect(result.application.referralId).toBe(referral.id);
     expect(result.application.source).toBe("MITARBEITEREMPFEHLUNG");
   });
+
+  it("Nachname allein ist NIEMALS ein Match (Referral ohne Stadt)", async () => {
+    const regions = await createRegions();
+    const jana = asCurrentUser(await createUser({ name: "Jana" }), INNENDIENST_PERMS);
+
+    // Empfehlung OHNE Stadt und ohne E-Mail (nur Telefon der echten Person)
+    const referral = await db.referral.create({
+      data: {
+        type: "DIREKT",
+        referrerFirstName: "Paula",
+        referrerLastName: "P",
+        referrerEmail: "paula2@test.local",
+        consentConfirmed: true,
+        referredFirstName: "Kerim",
+        referredLastName: "Schmidt",
+        referredPhone: "0171 8887766",
+        referredBundesland: "NRW",
+        consentAt: new Date(),
+      },
+    });
+
+    // Anderer Mensch, zufällig gleicher (häufiger) Nachname → MUSS abgelehnt werden
+    const namensvetter = await createCandidateWithApplication({
+      bundesland: "NRW",
+      regionId: regions.nrw.id,
+      lastName: "Schmidt",
+    });
+    await expect(
+      convertReferral(jana, referral.id, { linkCandidateId: namensvetter.candidate.id }),
+    ).rejects.toThrow(/passt nicht/);
+
+    // Identische Telefonnummer bleibt ein gültiger Match
+    const echterMatch = await db.candidate.create({
+      data: {
+        firstName: "Kerim",
+        lastName: "Schmidt",
+        email: "kerim@test.local",
+        emailNormalized: "kerim@test.local",
+        phone: "0171 8887766",
+        phoneNormalized: "+491718887766",
+        city: "Essen",
+        bundesland: "NRW",
+      },
+    });
+    const ok = await convertReferral(jana, referral.id, { linkCandidateId: echterMatch.id });
+    expect(ok.candidate.id).toBe(echterMatch.id);
+  });
+
+  it("Name + Wohnort matcht nur, wenn beide Werte vorhanden sind (inkl. Vorname, falls bekannt)", async () => {
+    const regions = await createRegions();
+    const jana = asCurrentUser(await createUser({ name: "Jana" }), INNENDIENST_PERMS);
+    const referral = await db.referral.create({
+      data: {
+        type: "DIREKT",
+        referrerFirstName: "Paula",
+        referrerLastName: "P",
+        referrerEmail: "paula3@test.local",
+        consentConfirmed: true,
+        referredFirstName: "Lena",
+        referredLastName: "Krause",
+        referredPhone: "0171 1231212",
+        referredCity: "Bonn",
+        referredBundesland: "NRW",
+        consentAt: new Date(),
+      },
+    });
+
+    // Gleicher Nachname + Stadt, aber anderer Vorname → abgelehnt (Vorname ist bekannt)
+    const andereLena = await db.candidate.create({
+      data: {
+        firstName: "Marta",
+        lastName: "Krause",
+        email: "marta@test.local",
+        emailNormalized: "marta@test.local",
+        phone: "+491700000042",
+        phoneNormalized: "+491700000042",
+        city: "Bonn",
+        bundesland: "NRW",
+      },
+    });
+    await expect(
+      convertReferral(jana, referral.id, { linkCandidateId: andereLena.id }),
+    ).rejects.toThrow(/passt nicht/);
+
+    // Vor- + Nachname + Stadt → akzeptiert
+    const passt = await db.candidate.create({
+      data: {
+        firstName: "Lena",
+        lastName: "Krause",
+        email: "lena@test.local",
+        emailNormalized: "lena@test.local",
+        phone: "+491700000043",
+        phoneNormalized: "+491700000043",
+        city: "Bonn",
+        bundesland: "NRW",
+      },
+    });
+    const ok = await convertReferral(jana, referral.id, { linkCandidateId: passt.id });
+    expect(ok.candidate.id).toBe(passt.id);
+    void regions;
+  });
 });
