@@ -1,0 +1,974 @@
+// Möller GmbH Plattform – Datenmodell
+// Konventionen: deutsche Domänen-Enums, englische Feldnamen, FK + Indexe explizit.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Benutzer, Rollen, Rechte
+// ============================================================
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String
+  passwordHash       String
+  active             Boolean   @default(true)
+  // Teamleiter: fachliche Heimatregion
+  regionId           String?
+  region             Region?   @relation(fields: [regionId], references: [id])
+  // MFA
+  mfaSecretEnc       String? // AES-256-GCM-verschlüsseltes TOTP-Secret
+  mfaEnabledAt       DateTime?
+  recoveryCodeHashes String[]  @default([])
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  roles               UserRole[]
+  sessions            Session[]
+  passwordResets      PasswordResetToken[]
+  notesAuthored       CandidateNote[]      @relation("noteAuthor")
+  remindersAssigned   Reminder[]           @relation("reminderAssignee")
+  remindersCreated    Reminder[]           @relation("reminderCreator")
+  delegationsGiven    TeamLeadDelegation[] @relation("delegationFrom")
+  delegationsReceived TeamLeadDelegation[] @relation("delegationTo")
+  delegationsCreated  TeamLeadDelegation[] @relation("delegationCreator")
+  chatAssignments     ChatAssignment[]
+  chatConversations   ChatConversation[]
+  chatMessages        ChatMessage[]
+  applicationsAssigned Application[]       @relation("applicationAssignee")
+  assignmentsMade     CandidateAssignment[]
+  cmsRevisions        CmsRevision[]
+  mediaUploaded       MediaAsset[]
+  auditEntries        AuditLog[]
+  notifications       Notification[]
+  trainingAssignmentsCreated TrainingAssignment[] @relation("trainingAssigner")
+  trainingInvitationsCreated TrainingInvitation[]
+  jobsCreated          Job[]
+
+  @@index([regionId])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // ADMINISTRATOR | INNENDIENST | TEAMLEITER | ...
+  name        String
+  description String?
+  system      Boolean          @default(false) // Systemrollen nicht löschbar
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id    String           @id @default(cuid())
+  key   String           @unique // z. B. candidates.read.all
+  name  String
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// Team-Region (NRW, Hessen, Bayern). Bundesland→Region-Mapping in SystemSetting.
+model Region {
+  id    String @id @default(cuid())
+  key   String @unique // NRW | HESSEN | BAYERN
+  name  String
+  users User[]
+  applications Application[]
+  assignments  CandidateAssignment[]
+  trainingAssignments TrainingAssignment[]
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  mfaPending Boolean   @default(false) // Login erfolgt, TOTP noch ausstehend
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ============================================================
+// Jobs
+// ============================================================
+
+enum Bundesland {
+  NRW
+  HESSEN
+  RHEINLAND_PFALZ
+  BAYERN
+}
+
+enum JobStatus {
+  ENTWURF
+  VEROEFFENTLICHT
+  PAUSIERT
+  ARCHIVIERT
+}
+
+enum Einsatzbereich {
+  LEH
+  ELEKTROFACHMARKT
+  MESSEN_EVENTS
+  POS_BETREUUNG
+}
+
+enum Beschaeftigungsart {
+  VOLLZEIT
+  TEILZEIT
+  MINIJOB
+  SELBSTSTAENDIG
+}
+
+enum Anforderung {
+  ERFORDERLICH
+  VON_VORTEIL
+  NICHT_NOTWENDIG
+}
+
+model Job {
+  id              String             @id @default(cuid())
+  slug            String             @unique
+  title           String
+  bundesland      Bundesland
+  city            String // Ort / Region (Anzeige)
+  plz             String?
+  lat             Float?
+  lng             Float?
+  einsatzbereich  Einsatzbereich
+  employmentType  Beschaeftigungsart
+  startDate       DateTime?
+  endDate         DateTime?
+  intro           String // Kurzbeschreibung
+  description     Json // Rich-Text-light-Blöcke
+  tasks           String[]
+  requirements    String[]
+  benefits        String[]
+  contactName     String?
+  contactPhone    String?
+  status          JobStatus          @default(ENTWURF)
+  publishAt       DateTime? // Terminveröffentlichung
+  publishedAt     DateTime?
+  expiresAt       DateTime? // optionales Ablaufdatum
+  autoDeactivate  Boolean            @default(true)
+  driversLicense  Anforderung        @default(VON_VORTEIL)
+  ownCar          Anforderung        @default(NICHT_NOTWENDIG)
+  cvUploadEnabled Boolean            @default(false)
+  indexable       Boolean            @default(true)
+  createdById     String?
+  createdBy       User?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  applications    Application[]
+
+  @@index([status, bundesland])
+  @@index([publishAt])
+  @@index([expiresAt])
+}
+
+// ============================================================
+// Bewerber & Bewerbungen
+// ============================================================
+
+enum CandidateSource {
+  WEBSITE
+  INITIATIV
+  MITARBEITEREMPFEHLUNG
+  SONSTIGE
+}
+
+model Candidate {
+  id              String          @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String
+  emailNormalized String
+  phone           String
+  phoneNormalized String
+  city            String
+  bundesland      Bundesland
+  source          CandidateSource @default(WEBSITE)
+  anonymizedAt    DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  applications Application[]
+  notes        CandidateNote[]
+  reminders    Reminder[]
+  files        PrivateFile[]
+  consents     ConsentRecord[]
+  referrals    Referral[]      @relation("referralConverted")
+  trainingAssignments TrainingAssignment[]
+
+  @@index([emailNormalized])
+  @@index([phoneNormalized])
+  @@index([lastName, city])
+}
+
+enum ApplicationType {
+  STELLE
+  INITIATIV
+}
+
+enum AutoStatus {
+  NEU
+  OFFEN
+}
+
+enum ManualStatus {
+  INTERESSENTENGESPRAECH_VEREINBART
+  INTERESSENTENGESPRAECH_DURCHGEFUEHRT
+  SCHNUPPERTAG_VEREINBART
+  SCHNUPPERTAG_DURCHGEFUEHRT
+  VERTRAGSGESPRAECH_VEREINBART
+  VERTRAGSGESPRAECH_DURCHGEFUEHRT
+  ZUSAGE
+  ABSAGE
+}
+
+model Application {
+  id                  String          @id @default(cuid())
+  candidateId         String
+  candidate           Candidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobId               String?
+  job                 Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  type                ApplicationType @default(STELLE)
+  // Formulardaten (Stand Einreichung)
+  bundesland          Bundesland
+  city                String
+  driversLicense      Boolean
+  ownCar              Boolean?
+  previousActivity    String
+  availableFrom       String
+  message             String?
+  cvFileId            String?         @unique
+  cvFile              PrivateFile?    @relation(fields: [cvFileId], references: [id], onDelete: SetNull)
+  // Status
+  autoStatus          AutoStatus      @default(NEU)
+  manualStatus        ManualStatus?
+  statusChangedAt     DateTime        @default(now())
+  // Verantwortung
+  responsibleRegionId String
+  responsibleRegion   Region          @relation(fields: [responsibleRegionId], references: [id])
+  assignedUserId      String?
+  assignedUser        User?           @relation("applicationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  // Herkunft
+  source              CandidateSource @default(WEBSITE)
+  referralId          String?         @unique
+  referral            Referral?       @relation(fields: [referralId], references: [id], onDelete: SetNull)
+  utmSource           String?
+  utmMedium           String?
+  utmCampaign         String?
+  consentVersion      String
+  anonymizedAt        DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  statusHistory ApplicationStatusHistory[]
+  assignments   CandidateAssignment[]
+  reminders     Reminder[]
+  notes         CandidateNote[]
+
+  @@index([candidateId])
+  @@index([jobId])
+  @@index([responsibleRegionId, createdAt])
+  @@index([autoStatus, manualStatus])
+  @@index([createdAt])
+}
+
+model ApplicationStatusHistory {
+  id            String        @id @default(cuid())
+  applicationId String
+  application   Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromAuto      AutoStatus?
+  fromManual    ManualStatus?
+  toAuto        AutoStatus?
+  toManual      ManualStatus?
+  changedById   String? // null = System (Automatik)
+  comment       String?
+  createdAt     DateTime      @default(now())
+
+  @@index([applicationId, createdAt])
+}
+
+// Zuordnungs-Protokoll (Region/Benutzer)
+model CandidateAssignment {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  regionId      String
+  region        Region      @relation(fields: [regionId], references: [id])
+  userId        String?
+  assignedById  String?
+  assignedBy    User?       @relation(fields: [assignedById], references: [id], onDelete: SetNull)
+  reason        String?
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId, createdAt])
+}
+
+model CandidateNote {
+  id            String       @id @default(cuid())
+  candidateId   String
+  candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  authorId      String?
+  author        User?        @relation("noteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  body          String
+  editHistory   Json         @default("[]") // [{editedAt, editedById, previousBody}]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([candidateId, createdAt])
+}
+
+model Reminder {
+  id            String       @id @default(cuid())
+  candidateId   String?
+  candidate     Candidate?   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  referralId    String?
+  referral      Referral?    @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  dueDate       DateTime // Datum (00:00 lokal) – Uhrzeit optional separat
+  dueTime       String? // "HH:MM"
+  subject       String
+  assigneeId    String
+  assignee      User         @relation("reminderAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+  createdById   String?
+  createdBy     User?        @relation("reminderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  done          Boolean      @default(false)
+  doneAt        DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([assigneeId, done, dueDate])
+  @@index([applicationId])
+}
+
+model TeamLeadDelegation {
+  id          String    @id @default(cuid())
+  fromUserId  String // vertretener Teamleiter
+  fromUser    User      @relation("delegationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId    String // Vertreter
+  toUser      User      @relation("delegationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  startsAt    DateTime
+  endsAt      DateTime
+  reason      String?
+  createdById String?
+  createdBy   User?     @relation("delegationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([toUserId, startsAt, endsAt])
+  @@index([fromUserId])
+}
+
+// ============================================================
+// Mitarbeiterempfehlungen
+// ============================================================
+
+enum ReferralType {
+  LINK
+  DIREKT
+}
+
+enum ReferralStatus {
+  EMPFEHLUNG_NEU
+  KONTAKT_AUSSTEHEND
+  KONTAKTIERT
+  INTERESSE
+  KEIN_INTERESSE
+  IN_BEWERBUNG_UEBERNOMMEN
+}
+
+enum IncentiveStatus {
+  NICHT_RELEVANT
+  PRUEFUNG
+  FAELLIG
+  ERLEDIGT
+}
+
+model Referral {
+  id                  String          @id @default(cuid())
+  type                ReferralType
+  code                String?         @unique // Empfehlungslink-Code (Variante A)
+  // Empfehlender Promotor
+  referrerFirstName   String
+  referrerLastName    String
+  referrerEmail       String?
+  referrerPhone       String?
+  referrerEmployeeNo  String?
+  // Empfohlene Person (Variante B sofort; Variante A nach Selbsteintrag)
+  referredFirstName   String?
+  referredLastName    String?
+  referredEmail       String?
+  referredPhone       String?
+  referredCity        String?
+  referredBundesland  Bundesland?
+  note                String?
+  // Consent (Variante B)
+  consentConfirmed    Boolean         @default(false)
+  consentVersion      String?
+  consentAt           DateTime?
+  // Status (eigene Lead-Statuswelt, getrennt vom Bewerbungsstatus)
+  status              ReferralStatus  @default(EMPFEHLUNG_NEU)
+  // Conversion
+  convertedCandidateId String?
+  convertedCandidate  Candidate?      @relation("referralConverted", fields: [convertedCandidateId], references: [id], onDelete: SetNull)
+  application         Application?
+  // Incentive (Feature-Flag-gesteuert, Default ausgeblendet)
+  incentiveEnabled    Boolean         @default(false)
+  incentiveStatus     IncentiveStatus @default(NICHT_RELEVANT)
+  anonymizedAt        DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  statusHistory ReferralStatusHistory[]
+  reminders     Reminder[]
+  consents      ConsentRecord[]
+
+  @@index([status, createdAt])
+  @@index([referredBundesland])
+}
+
+model ReferralStatusHistory {
+  id          String         @id @default(cuid())
+  referralId  String
+  referral    Referral       @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  fromStatus  ReferralStatus?
+  toStatus    ReferralStatus
+  changedById String?
+  comment     String?
+  createdAt   DateTime       @default(now())
+
+  @@index([referralId, createdAt])
+}
+
+// ============================================================
+// Live-Chat
+// ============================================================
+
+enum ChatStatus {
+  OFFEN
+  BEANTWORTET
+  ERLEDIGT
+}
+
+enum ChatSender {
+  BESUCHER
+  TEAM
+  SYSTEM
+}
+
+model ChatConversation {
+  id               String     @id @default(cuid())
+  visitorTokenHash String     @unique
+  visitorName      String?
+  visitorEmail     String?
+  visitorPhone     String?
+  topic            String? // Bewerber / Unternehmen / Allgemein
+  status           ChatStatus @default(OFFEN)
+  startedOffline   Boolean    @default(false)
+  assignedUserId   String?
+  assignedUser     User?      @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  internalNote     String?
+  lastMessageAt    DateTime   @default(now())
+  lastAgentReadAt  DateTime?
+  emailNotifiedAt  DateTime?
+  closedAt         DateTime?
+  anonymizedAt     DateTime?
+  createdAt        DateTime   @default(now())
+
+  messages    ChatMessage[]
+  assignments ChatAssignment[]
+
+  @@index([status, lastMessageAt])
+}
+
+model ChatMessage {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         ChatSender
+  senderUserId   String?
+  senderUser     User?            @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+  body           String
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model ChatAssignment {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedById   String?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId])
+}
+
+// ============================================================
+// CMS & Medien
+// ============================================================
+
+enum CmsPageType {
+  STANDARD
+  RECHTLICH
+}
+
+model CmsPage {
+  id                  String       @id @default(cuid())
+  slug                String       @unique
+  title               String
+  type                CmsPageType  @default(STANDARD)
+  enabled             Boolean      @default(true) // optionale Bereiche (FAQ, Referenzen) deaktivierbar
+  publishedRevisionId String?      @unique
+  publishedRevision   CmsRevision? @relation("publishedRevision", fields: [publishedRevisionId], references: [id])
+  publishAt           DateTime? // geplante Veröffentlichung eines Entwurfs
+  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime     @default(now())
+
+  revisions CmsRevision[] @relation("pageRevisions")
+}
+
+model CmsRevision {
+  id          String    @id @default(cuid())
+  pageId      String
+  page        CmsPage   @relation("pageRevisions", fields: [pageId], references: [id], onDelete: Cascade)
+  version     Int
+  content     Json // strukturierte Sektionen/Blöcke
+  note        String?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  publishedFor CmsPage? @relation("publishedRevision")
+
+  @@unique([pageId, version])
+}
+
+enum MediaApproval {
+  FREIGEGEBEN
+  FREIGABE_ERFORDERLICH
+  GESPERRT
+}
+
+enum MediaCategory {
+  BRAND
+  POS
+  TEAM
+  TRAINING
+  SONSTIGE
+}
+
+enum MediaVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+model MediaAsset {
+  id           String          @id @default(cuid())
+  fileName     String // Name im Storage (randomisiert)
+  originalName String
+  mime         String
+  size         Int
+  width        Int?
+  height       Int?
+  alt          String          @default("")
+  description  String? // interne Beschreibung
+  credit       String? // Urheber-/Rechtehinweis
+  approval     MediaApproval   @default(FREIGABE_ERFORDERLICH)
+  category     MediaCategory   @default(SONSTIGE)
+  visibility   MediaVisibility @default(PUBLIC)
+  focalX       Float           @default(0.5)
+  focalY       Float           @default(0.5)
+  uploadedById String?
+  uploadedBy   User?           @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime        @default(now())
+
+  trainingAssets TrainingAsset[]
+  references     CustomerReference[]
+  teamMembers    TeamMember[]
+
+  @@index([category, approval])
+}
+
+// Private Dateien (Lebensläufe etc.) – nie öffentlich ausgeliefert
+model PrivateFile {
+  id           String     @id @default(cuid())
+  candidateId  String?
+  candidate    Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  kind         String // CV | SONSTIGE
+  fileName     String // Name im Storage (randomisiert)
+  originalName String
+  mime         String
+  size         Int
+  createdAt    DateTime   @default(now())
+
+  application Application?
+
+  @@index([candidateId])
+}
+
+// Innendienst-/Team-Bereich (öffentlich, optional aktivierbar – Masterprompt §13)
+model TeamMember {
+  id          String      @id @default(cuid())
+  name        String
+  role        String
+  bio         String?
+  photoMediaId String?
+  photoMedia  MediaAsset? @relation(fields: [photoMediaId], references: [id], onDelete: SetNull)
+  active      Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+}
+
+model CustomerReference {
+  id           String      @id @default(cuid())
+  name         String
+  logoMediaId  String?
+  logoMedia    MediaAsset? @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
+  approved     Boolean     @default(false) // Veröffentlichung durch Kunden freigegeben?
+  active       Boolean     @default(false)
+  sortOrder    Int         @default(0)
+  createdAt    DateTime    @default(now())
+}
+
+// ============================================================
+// Academy (Training)
+// ============================================================
+
+model TrainingCourse {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  versions TrainingCourseVersion[]
+}
+
+model TrainingCourseVersion {
+  id          String    @id @default(cuid())
+  courseId    String
+  course      TrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  version     Int
+  changelog   String?
+  passScore   Int       @default(80) // Prozent
+  publishedAt DateTime? // null = Entwurf; veröffentlichte Versionen sind eingefroren
+  createdAt   DateTime  @default(now())
+
+  modules     TrainingModule[]
+  assignments TrainingAssignment[]
+  completions TrainingCompletion[]
+  assets      TrainingAsset[]
+
+  @@unique([courseId, version])
+}
+
+model TrainingModule {
+  id              String                @id @default(cuid())
+  courseVersionId String
+  courseVersion   TrainingCourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Cascade)
+  sortOrder       Int
+  title           String
+  intro           String?
+  required        Boolean               @default(true)
+
+  lessons TrainingLesson[]
+
+  @@unique([courseVersionId, sortOrder])
+}
+
+model TrainingLesson {
+  id           String         @id @default(cuid())
+  moduleId     String
+  module       TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  sortOrder    Int
+  title        String
+  content      Json // Blöcke: intro | steps | screenshot | warning | remember | example
+  sourceSlides Int[]          @default([]) // Rückverweis auf PPTX-Folien (Audit)
+
+  questions TrainingQuestion[]
+  progress  TrainingProgress[]
+
+  @@unique([moduleId, sortOrder])
+}
+
+model TrainingQuestion {
+  id          String         @id @default(cuid())
+  lessonId    String
+  lesson      TrainingLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  sortOrder   Int
+  question    String
+  explanation String // Erklärung bei falscher Antwort + Rückverweis
+  finalCheck  Boolean        @default(false) // Teil des Abschluss-Wissenschecks
+
+  options TrainingQuestionOption[]
+  answers TrainingAnswer[]
+
+  @@unique([lessonId, sortOrder])
+}
+
+model TrainingQuestionOption {
+  id         String           @id @default(cuid())
+  questionId String
+  question   TrainingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sortOrder  Int
+  text       String
+  correct    Boolean          @default(false)
+
+  @@unique([questionId, sortOrder])
+}
+
+enum TrainingAssignmentStatus {
+  NICHT_EINGELADEN
+  EINGELADEN
+  BEGONNEN
+  IN_BEARBEITUNG
+  ABGESCHLOSSEN
+}
+
+model TrainingAssignment {
+  id                  String                   @id @default(cuid())
+  candidateId         String
+  candidate           Candidate                @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  courseVersionId     String
+  courseVersion       TrainingCourseVersion    @relation(fields: [courseVersionId], references: [id])
+  status              TrainingAssignmentStatus @default(NICHT_EINGELADEN)
+  responsibleRegionId String?
+  responsibleRegion   Region?                  @relation(fields: [responsibleRegionId], references: [id])
+  dueAt               DateTime?
+  invitedAt           DateTime?
+  firstAccessAt       DateTime?
+  lastAccessAt        DateTime?
+  progressPct         Int                      @default(0)
+  assignedById        String?
+  assignedBy          User?                    @relation("trainingAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  invitations  TrainingInvitation[]
+  progress     TrainingProgress[]
+  answers      TrainingAnswer[]
+  completion   TrainingCompletion?
+  reminderLogs TrainingReminderLog[]
+
+  @@index([candidateId])
+  @@index([status])
+  @@index([responsibleRegionId])
+}
+
+model TrainingInvitation {
+  id           String             @id @default(cuid())
+  assignmentId String
+  assignment   TrainingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  tokenHash    String             @unique
+  expiresAt    DateTime
+  sentAt       DateTime?
+  firstUsedAt  DateTime?
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdById  String?
+  createdBy    User?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime           @default(now())
+
+  @@index([assignmentId])
+}
+
+model TrainingProgress {
+  id           String             @id @default(cuid())
+  assignmentId String
+  assignment   TrainingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  lessonId     String
+  lesson       TrainingLesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  startedAt    DateTime           @default(now())
+  completedAt  DateTime?
+
+  @@unique([assignmentId, lessonId])
+}
+
+model TrainingAnswer {
+  id                String             @id @default(cuid())
+  assignmentId      String
+  assignment        TrainingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  questionId        String
+  question          TrainingQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionIds String[]
+  correct           Boolean
+  attempt           Int                @default(1)
+  answeredAt        DateTime           @default(now())
+
+  @@index([assignmentId, questionId])
+}
+
+model TrainingCompletion {
+  id              String                @id @default(cuid())
+  assignmentId    String                @unique
+  assignment      TrainingAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  courseVersionId String
+  courseVersion   TrainingCourseVersion @relation(fields: [courseVersionId], references: [id])
+  completedAt     DateTime              @default(now())
+  scorePct        Int
+  passed          Boolean
+}
+
+model TrainingReminderLog {
+  id           String             @id @default(cuid())
+  assignmentId String
+  assignment   TrainingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  kind         String // NICHT_GESTARTET | NICHT_ABGESCHLOSSEN | INTERN_UEBERFAELLIG
+  sentAt       DateTime           @default(now())
+
+  @@index([assignmentId, kind])
+}
+
+model TrainingAsset {
+  id              String                @id @default(cuid())
+  courseVersionId String
+  courseVersion   TrainingCourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Cascade)
+  mediaAssetId    String
+  mediaAsset      MediaAsset            @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  sourceSlide     Int?
+  caption         String?
+
+  @@unique([courseVersionId, mediaAssetId])
+}
+
+// ============================================================
+// System
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorType  String   @default("USER") // USER | SYSTEM | VISITOR
+  action     String // z. B. auth.login, application.status.change
+  entityType String?
+  entityId   String?
+  meta       Json     @default("{}")
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model EmailLog {
+  id          String      @id @default(cuid())
+  to          String
+  subject     String
+  template    String
+  bodyText    String
+  status      EmailStatus @default(PENDING)
+  attempts    Int         @default(0)
+  lastError   String?
+  relatedType String?
+  relatedId   String?
+  createdAt   DateTime    @default(now())
+  sentAt      DateTime?
+
+  @@index([status, attempts])
+  @@index([createdAt])
+}
+
+model ConsentRecord {
+  id          String     @id @default(cuid())
+  kind        String // BEWERBUNG | REFERRAL_DIREKT | POOL
+  version     String
+  textSnippet String // dokumentierter Einwilligungstext (Version)
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  referralId  String?
+  referral    Referral?  @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+
+  @@index([candidateId])
+  @@index([referralId])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+// Persistenter Rate-Limit-Speicher (IP nur als Hash, TTL via Scheduler bereinigt)
+model RateLimitBucket {
+  key           String    @id // z. B. login:ipHash oder login:user:xyz
+  windowStartAt DateTime
+  count         Int       @default(0)
+  blockedUntil  DateTime?
+  updatedAt     DateTime  @updatedAt
+}
